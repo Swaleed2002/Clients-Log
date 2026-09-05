@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing role and status.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["ADMIN", "ENGINEER"] },
+        "status": { "type": "string", "enum": ["Active", "Disabled"] }
+      },
+      "required": ["userId", "fullName", "role", "status"]
+    },
+    "WorkEntry": {
+      "title": "WorkEntry",
+      "description": "A single field engineer work log entry.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 50 },
+        "workType": { "type": "string", "maxLength": 50 },
+        "customerName": { "type": "string", "maxLength": 100 },
+        "location": { "type": "string", "maxLength": 100 },
+        "travelStart": { "type": "string", "maxLength": 10 },
+        "travelStop": { "type": "string", "maxLength": 10 },
+        "jobStart": { "type": "string", "maxLength": 10 },
+        "jobStop": { "type": "string", "maxLength": 10 },
+        "jobCategory": { "type": "string", "maxLength": 200 },
+        "remarks": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userId", "date", "workType", "customerName", "location", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "entries/{entryId}": {
+      "schema": { "$ref": "#/entities/WorkEntry" },
+      "description": "Stores work entries for all engineers."
+    }
+  }
+}

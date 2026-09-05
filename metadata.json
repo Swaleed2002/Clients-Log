@@ -1,0 +1,6 @@
+{
+  "name": "Field Engineer Daily Log",
+  "description": "A simple, offline-first personal work-log for Field Service Engineers to record daily field visits and workshop work, then export a professional weekly report to Excel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

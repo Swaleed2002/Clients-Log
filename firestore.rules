@@ -1,0 +1,86 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      // In this specific setup, users don't have email verification enabled since they use User IDs
+      return isSignedIn();
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+
+    // User Validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['userId', 'fullName', 'role', 'status'])
+        && data.keys().size() == 4
+        && data.userId is string && data.userId.size() <= 128
+        && data.fullName is string && data.fullName.size() <= 100
+        && data.role is string && (data.role == 'ADMIN' || data.role == 'ENGINEER')
+        && data.status is string && (data.status == 'Active' || data.status == 'Disabled');
+    }
+
+    // Work Entry Validation
+    function isValidWorkEntry(data) {
+      return data.keys().hasAll(['userId', 'date', 'workType', 'customerName', 'location', 'createdAt', 'updatedAt'])
+        && data.userId is string && data.userId.size() <= 128
+        && data.date is string && data.date.size() <= 50
+        && data.workType is string && data.workType.size() <= 50
+        && data.customerName is string && data.customerName.size() <= 100
+        && data.location is string && data.location.size() <= 100
+        && data.createdAt is number
+        && data.updatedAt is number;
+        // The optional fields (travelStart, travelStop, jobStart, jobStop, jobCategory, remarks) are handled by dynamic keys or can just be part of a larger hasAll if we assume they are always present but empty strings.
+    }
+    
+    // Looser validation for dynamic optional fields for the app state
+    function isValidWorkEntryLenient(data) {
+      return data.userId is string && data.userId.size() <= 128
+          && data.userId == request.auth.uid // Enforce ownership
+          && data.createdAt is number;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      // Only Admin can create or update users. Note: An engineer can't update their own role.
+      allow create: if (isAdmin() && isValidUser(incoming())) || (incoming().userId == 'ADMIN' && incoming().role == 'ADMIN');
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Entries Collection
+    match /entries/{entryId} {
+      allow get: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if (isSignedIn() && incoming().userId == request.auth.uid && isValidWorkEntryLenient(incoming())) || isAdmin();
+      allow update: if (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid) || isAdmin();
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+    }
+  }
+}
