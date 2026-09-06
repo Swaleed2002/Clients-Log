@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -16,3 +17,4 @@ enableMultiTabIndexedDbPersistence(db).catch((err) => {
 });
 
 export const auth = getAuth(app);
+export const functions = getFunctions(app);
