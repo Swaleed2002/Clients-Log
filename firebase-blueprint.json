@@ -7,7 +7,7 @@
       "properties": {
         "userId": { "type": "string", "maxLength": 128 },
         "fullName": { "type": "string", "maxLength": 100 },
-        "role": { "type": "string", "enum": ["ADMIN", "ENGINEER"] },
+        "role": { "type": "string", "enum": ["ADMIN", "STORE", "ENGINEER"] },
         "status": { "type": "string", "enum": ["Active", "Disabled"] }
       },
       "required": ["userId", "fullName", "role", "status"]
@@ -32,6 +32,80 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["userId", "date", "workType", "customerName", "location", "createdAt", "updatedAt"]
+    },
+    "ServiceReport": {
+      "title": "ServiceReport",
+      "description": "Official Service Report / Work Order form.",
+      "type": "object",
+      "properties": {
+        "reportNo": { "type": "string" },
+        "userId": { "type": "string" },
+        "customer": { "type": "string" },
+        "modelNumber": { "type": "string" },
+        "printerSerial": { "type": "string" },
+        "jobCarriedOut": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["reportNo", "userId", "customer", "createdAt", "updatedAt"]
+    },
+    "StoreInventory": {
+      "title": "StoreInventory",
+      "description": "Store room inventory record.",
+      "type": "object",
+      "properties": {
+        "partId": { "type": "string" },
+        "partNumber": { "type": "string" },
+        "quantity": { "type": "number" },
+        "condition": { "type": "string" },
+        "location": { "type": "string" }
+      },
+      "required": ["partId", "partNumber", "quantity"]
+    },
+    "PartTransaction": {
+      "title": "PartTransaction",
+      "description": "Lifecycle audit trail for parts movement.",
+      "type": "object",
+      "properties": {
+        "partNumber": { "type": "string" },
+        "engineerId": { "type": "string" },
+        "purpose": { "type": "string" },
+        "status": { "type": "string" },
+        "quantity": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["partNumber", "engineerId", "status", "quantity"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Customer client record.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "telFax": { "type": "string" },
+        "email": { "type": "string" },
+        "contactPerson": { "type": "string" }
+      },
+      "required": ["name", "address"]
+    },
+    "CustomerMachine": {
+      "title": "CustomerMachine",
+      "description": "Customer printer machine record with mandatory consumables and serials.",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "brand": { "type": "string", "enum": ["LINX", "UBS", "RYNAN"] },
+        "model": { "type": "string" },
+        "serialNumber": { "type": "string" },
+        "printHeadSerial": { "type": "string" },
+        "ink": { "type": "string" },
+        "solvent": { "type": "string" },
+        "location": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["customerName", "brand", "model", "serialNumber", "printHeadSerial", "ink", "solvent"]
     }
   },
   "firestore": {
@@ -42,6 +116,30 @@
     "entries/{entryId}": {
       "schema": { "$ref": "#/entities/WorkEntry" },
       "description": "Stores work entries for all engineers."
+    },
+    "serviceReports/{reportId}": {
+      "schema": { "$ref": "#/entities/ServiceReport" },
+      "description": "Stores official service reports."
+    },
+    "inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/StoreInventory" },
+      "description": "Store inventory items."
+    },
+    "engineerBags/{bagItemId}": {
+      "schema": { "$ref": "#/entities/StoreInventory" },
+      "description": "Engineer bag parts stock."
+    },
+    "partTransactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/PartTransaction" },
+      "description": "Lifecycle tracking of parts."
+    },
+    "clients/{clientId}": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Stores customer client records."
+    },
+    "customerMachines/{machineId}": {
+      "schema": { "$ref": "#/entities/CustomerMachine" },
+      "description": "Stores customer machines with mandatory ink, solvent and printhead serial."
     }
   }
 }

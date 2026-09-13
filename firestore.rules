@@ -13,17 +13,24 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isVerified() {
-      // In this specific setup, users don't have email verification enabled since they use User IDs
-      return isSignedIn();
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-    
+
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'ADMIN';
+    }
+
+    function isStore() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserData().role == 'STORE' || getUserData().role == 'ADMIN');
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getAppUserId() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? getUserData().userId : '';
     }
 
     function incoming() {
@@ -34,53 +41,92 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // User Validation
-    function isValidUser(data) {
-      return data.keys().hasAll(['userId', 'fullName', 'role', 'status'])
-        && data.keys().size() == 4
-        && data.userId is string && data.userId.size() <= 128
-        && data.fullName is string && data.fullName.size() <= 100
-        && data.role is string && (data.role == 'ADMIN' || data.role == 'ENGINEER')
-        && data.status is string && (data.status == 'Active' || data.status == 'Disabled');
-    }
-
-    // Work Entry Validation
-    function isValidWorkEntry(data) {
-      return data.keys().hasAll(['userId', 'date', 'workType', 'customerName', 'location', 'createdAt', 'updatedAt'])
-        && data.userId is string && data.userId.size() <= 128
-        && data.date is string && data.date.size() <= 50
-        && data.workType is string && data.workType.size() <= 50
-        && data.customerName is string && data.customerName.size() <= 100
-        && data.location is string && data.location.size() <= 100
-        && data.createdAt is number
-        && data.updatedAt is number;
-        // The optional fields (travelStart, travelStop, jobStart, jobStop, jobCategory, remarks) are handled by dynamic keys or can just be part of a larger hasAll if we assume they are always present but empty strings.
-    }
-    
-    // Looser validation for dynamic optional fields for the app state
-    function isValidWorkEntryLenient(data) {
-      return data.userId is string && data.userId.size() <= 128
-          && data.userId == request.auth.uid // Enforce ownership
-          && data.createdAt is number;
+    function isValidMachineData(data, isCreate) {
+      return data.customerName is string && data.customerName.size() > 0 && !data.customerName.matches('^[ \t\r\n]*$')
+        && data.brand is string && data.brand.size() > 0
+        && data.model is string && data.model.size() > 0 && !data.model.matches('^[ \t\r\n]*$')
+        && data.serialNumber is string && data.serialNumber.size() > 0 && !data.serialNumber.matches('^[ \t\r\n]*$')
+        // Mandatory for new machines: Printhead Serial Number, Ink, and Solvent
+        && (!isCreate || (
+          data.printHeadSerial is string && data.printHeadSerial.size() > 0 && !data.printHeadSerial.matches('^[ \t\r\n]*$')
+          && data.ink is string && data.ink.size() > 0 && !data.ink.matches('^[ \t\r\n]*$')
+          && data.solvent is string && data.solvent.size() > 0 && !data.solvent.matches('^[ \t\r\n]*$')
+        ))
+        // For updates, if provided, cannot be empty or whitespace-only
+        && (!('printHeadSerial' in data) || (data.printHeadSerial is string && data.printHeadSerial.size() > 0 && !data.printHeadSerial.matches('^[ \t\r\n]*$')))
+        && (!('ink' in data) || (data.ink is string && data.ink.size() > 0 && !data.ink.matches('^[ \t\r\n]*$')))
+        && (!('solvent' in data) || (data.solvent is string && data.solvent.size() > 0 && !data.solvent.matches('^[ \t\r\n]*$')));
     }
 
     // Users Collection
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
-      // Only Admin can create or update users. Note: An engineer can't update their own role.
-      allow create: if (isAdmin() && isValidUser(incoming())) || (incoming().userId == 'ADMIN' && incoming().role == 'ADMIN');
+      allow get: if isOwner(userId) || isAdmin() || isStore();
+      allow list: if isAdmin() || isStore();
+      allow create: if (isAdmin() && (incoming().role == 'ADMIN' || incoming().role == 'STORE' || incoming().role == 'ENGINEER')) || (incoming().userId == 'ADMIN' && incoming().role == 'ADMIN');
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // Entries Collection
+    // Entries Collection (Engineer Work Logs)
     match /entries/{entryId} {
       allow get: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
       allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
-      allow create: if (isSignedIn() && incoming().userId == request.auth.uid && isValidWorkEntryLenient(incoming())) || isAdmin();
+      allow create: if (isSignedIn() && incoming().userId == request.auth.uid) || isAdmin();
       allow update: if (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid) || isAdmin();
       allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+    }
+
+    // Config Collection (sequence numbers for Service Reports, etc.)
+    match /config/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Service Reports Collection
+    match /serviceReports/{reportId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Store Inventory Collection
+    match /inventory/{itemId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isStore() || isAdmin();
+    }
+
+    // Engineer Bags Collection
+    match /engineerBags/{bagItemId} {
+      allow get: if isSignedIn() && (resource.data.engineerId == request.auth.uid || resource.data.engineerId == getAppUserId() || isStore() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.engineerId == request.auth.uid || resource.data.engineerId == getAppUserId() || isStore() || isAdmin());
+      allow create: if isSignedIn() && (incoming().engineerId == request.auth.uid || incoming().engineerId == getAppUserId() || isStore() || isAdmin());
+      allow update: if isSignedIn() && (
+        ((existing().engineerId == request.auth.uid || existing().engineerId == getAppUserId()) && 
+         (incoming().engineerId == request.auth.uid || incoming().engineerId == getAppUserId())) ||
+        isStore() || isAdmin()
+      );
+      allow delete: if isStore() || isAdmin();
+    }
+
+    // Part Transactions Collection
+    match /partTransactions/{transactionId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Clients Collection
+    match /clients/{clientId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isSignedIn() && incoming().name is string && incoming().name.size() > 0 && !incoming().name.matches('^[ \t\r\n]*$');
+      allow delete: if isAdmin();
+    }
+
+    // Customer Machines Collection
+    match /customerMachines/{machineId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidMachineData(incoming(), true);
+      allow update: if isSignedIn() && isValidMachineData(incoming(), false);
+      allow delete: if isAdmin();
     }
   }
 }
