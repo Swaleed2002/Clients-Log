@@ -1,3 +1,4 @@
+import reliableLogo from '../assets/reliable-app-icon.png';
 import React, { useState, useEffect } from 'react';
 import { 
   Home, 
@@ -130,11 +131,8 @@ export function DesktopSidebar({
       {/* Brand & Organization Header */}
       <div className="p-5 border-b border-slate-800/80 bg-[#0B132B]">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 relative bg-white rounded-xl p-1.5 shadow-sm flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-              <path d="M 5 65 L 55 15 C 70 5 85 10 90 25 C 93 35 80 50 55 50 L 35 50 L 5 65 Z" fill="#E61C24"/>
-              <path d="M 25 85 L 30 40 L 80 80 L 70 75 L 35 45 L 25 85 Z" fill="#1A1A1A"/>
-            </svg>
+          <div className="w-9 h-9 relative bg-white rounded-xl p-1 shadow-sm flex items-center justify-center shrink-0 overflow-hidden">
+            <img src={reliableLogo} alt="Reliable Logo" className="w-full h-full object-contain" />
           </div>
           <div className="overflow-hidden">
             <div className="flex items-center space-x-1.5">

@@ -494,12 +494,22 @@ export function ServiceReportForm({
 
             {/* Catalog matches */}
             <div className="max-h-40 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
-              {filteredCatalogParts.slice(0, 8).map(p => (
+              {filteredCatalogParts.slice(0, 8).map(p => {
+                const compatModels = getPartCompatibleModels(p);
+                const compatText = formatCompatibilityString(compatModels);
+
+                return (
                 <div key={p.id} className="p-2 flex items-center justify-between text-xs hover:bg-gray-50">
-                  <div>
-                    <span className="font-mono font-black text-gray-900">{p.partNumber}</span>
-                    <span className="text-gray-700 ml-2 font-medium">{p.description}</span>
-                    <span className="text-gray-400 text-[10px] ml-2">({p.category})</span>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono font-black text-gray-900">{p.partNumber}</span>
+                      <span className="text-gray-700 ml-1 font-medium">{p.description}</span>
+                      <span className="text-gray-400 text-[10px] ml-1">({p.category})</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5">
+                      <span className="font-semibold text-gray-600">Compatible:</span>
+                      <span className="text-blue-700 bg-blue-50 px-1 rounded font-mono text-[9px] border border-blue-100">{compatText}</span>
+                    </div>
                   </div>
                   <button
                     onClick={() => handleAddPartToReport({

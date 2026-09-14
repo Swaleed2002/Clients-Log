@@ -38,7 +38,7 @@ import {
   MapPin,
   UserCheck
 } from 'lucide-react';
-import { LINX_MODELS, UBS_MODELS, RYNAN_MODELS } from '../data/partsMaster';
+import { LINX_MODELS, LINX_MODEL_GROUPS, UBS_MODELS, RYNAN_MODELS } from '../data/partsMaster';
 import { INKS_MASTER } from '../data/inksMaster';
 import { BulkExcelImportModal } from './BulkExcelImportModal';
 import { saveCustomerMachineWithSync, saveClientWithSync } from '../utils/syncManager';
@@ -1004,8 +1004,12 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
                     onChange={e => setFormModel(e.target.value)}
                     className="w-full p-2.5 border border-gray-300 rounded-lg font-bold"
                   >
-                    {formBrand === 'LINX' && LINX_MODELS.map(m => (
-                      <option key={m} value={m}>{m}</option>
+                    {formBrand === 'LINX' && LINX_MODEL_GROUPS.map(grp => (
+                      <optgroup key={grp.group} label={grp.group}>
+                        {grp.models.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </optgroup>
                     ))}
                     {formBrand === 'UBS' && UBS_MODELS.map(m => (
                       <option key={m} value={m}>{m}</option>
@@ -1214,14 +1218,34 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Model</label>
-                  <input
-                    type="text"
+                  <label className="block font-bold text-gray-700 mb-1">Model <span className="text-red-500">*</span></label>
+                  <select
                     value={formModel}
                     onChange={e => setFormModel(e.target.value)}
-                    required
                     className="w-full p-2.5 border border-gray-300 rounded-lg font-bold"
-                  />
+                  >
+                    {formBrand === 'LINX' && (
+                      <>
+                        {/* If editing an older historical model not in LINX_MODELS, keep it visible */}
+                        {!LINX_MODELS.includes(formModel as any) && formModel && (
+                          <option value={formModel}>{formModel} (Saved)</option>
+                        )}
+                        {LINX_MODEL_GROUPS.map(grp => (
+                          <optgroup key={grp.group} label={grp.group}>
+                            {grp.models.map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </>
+                    )}
+                    {formBrand === 'UBS' && UBS_MODELS.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                    {formBrand === 'RYNAN' && RYNAN_MODELS.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

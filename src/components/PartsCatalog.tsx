@@ -10,9 +10,12 @@ import {
 } from '../types';
 import { 
   LINX_MODELS, 
+  LINX_MODEL_GROUPS, 
   UBS_MODELS, 
   RYNAN_MODELS, 
-  LINX_8810_PLUS_MODELS, 
+  LINX_8810_PLUS_MODELS,
+  getPartCompatibleModels,
+  formatCompatibilityString, 
   getPartsForModel, 
   searchParts 
 } from '../data/partsMaster';
@@ -174,30 +177,43 @@ export const PartsCatalog: React.FC<PartsCatalogProps> = ({
               Printer Model Selection
             </label>
             <div className="flex flex-wrap gap-2">
-              {selectedBrand === 'LINX' && LINX_MODELS.map(model => {
-                const isSelected = selectedLinxModel === model;
-                const isSpectrum = model === '8940 Spectrum';
-                return (
-                  <button
-                    key={model}
-                    onClick={() => {
-                      setSelectedLinxModel(model);
-                      setSelectedCategory('ALL');
-                    }}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border ${
-                      isSelected
-                        ? isSpectrum 
-                          ? 'bg-purple-700 text-white border-purple-700 shadow-sm ring-2 ring-purple-300'
-                          : 'bg-[#E61C24] text-white border-[#E61C24] shadow-sm'
-                        : isSpectrum
-                          ? 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
-                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    {isSpectrum ? '⭐ 8940 Spectrum' : model}
-                  </button>
-                );
-              })}
+              {selectedBrand === 'LINX' && (
+                <div className="w-full space-y-3">
+                  {LINX_MODEL_GROUPS.map(grp => (
+                    <div key={grp.group} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 bg-gray-50/70 p-2 rounded-xl border border-gray-100">
+                      <span className="text-[11px] font-black uppercase text-gray-500 min-w-[130px] shrink-0">
+                        {grp.group}:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {grp.models.map(model => {
+                          const isSelected = selectedLinxModel === model;
+                          const isSpectrum = model.includes('Spectrum');
+                          return (
+                            <button
+                              key={model}
+                              onClick={() => {
+                                setSelectedLinxModel(model);
+                                setSelectedCategory('ALL');
+                              }}
+                              className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all border ${
+                                isSelected
+                                  ? isSpectrum 
+                                    ? 'bg-purple-700 text-white border-purple-700 shadow-sm ring-2 ring-purple-300'
+                                    : 'bg-[#E61C24] text-white border-[#E61C24] shadow-sm'
+                                  : isSpectrum
+                                    ? 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              {isSpectrum ? `⭐ ${model}` : model}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {selectedBrand === 'UBS' && UBS_MODELS.map(model => (
                 <button
@@ -367,6 +383,14 @@ export const PartsCatalog: React.FC<PartsCatalogProps> = ({
                       <p className="text-sm font-bold text-gray-800 mt-1 line-clamp-2">
                         {part.description}
                       </p>
+
+                      {/* Machine / Model Compatibility Badge */}
+                      <div className="mt-2.5 flex items-center gap-1.5 text-xs">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Fit:</span>
+                        <span className="text-blue-800 bg-blue-50/80 px-2 py-0.5 rounded font-mono font-bold text-[11px] border border-blue-100">
+                          {formatCompatibilityString(getPartCompatibleModels(part))}
+                        </span>
+                      </div>
 
                       {/* Comments / Tech details */}
                       {part.comments && (

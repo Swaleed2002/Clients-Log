@@ -1,17 +1,62 @@
 import { PartMasterItem, PrinterBrand, LinxModel, UbsModel, RynanModel } from '../types';
 
-export const LINX_MODELS: LinxModel[] = [
-  'CJ400',
-  '5900',
+// Standalone Models (NOT treated as series/families)
+export const LINX_STANDALONE_MODELS: LinxModel[] = [
   '7900',
-  '8810',
+  '7300',
+  'CJ400',
+  '5900'
+];
+
+// Linx 8800 Series
+export const LINX_8800_SERIES_MODELS: LinxModel[] = [
   '8820',
-  '8840',
+  '8830',
+  '8840'
+];
+
+// Linx 8900 Series
+export const LINX_8900_SERIES_MODELS: LinxModel[] = [
   '8910',
   '8920',
-  '8940 Spectrum',
-  '9800',
-  '9900'
+  '8940',
+  '8940 Spectrum'
+];
+
+// Linx 9800 Series
+export const LINX_9800_SERIES_MODELS: LinxModel[] = [
+  '9810',
+  '9820',
+  '9830',
+  '9840',
+  '9840 Spectrum'
+];
+
+// Linx 9900 Series
+export const LINX_9900_SERIES_MODELS: LinxModel[] = [
+  '9900',
+  '9910',
+  '9920',
+  '9940',
+  '9940 Spectrum'
+];
+
+// Complete grouped Linx model structure for selectors
+export const LINX_MODEL_GROUPS = [
+  { group: 'Standalone Models', models: LINX_STANDALONE_MODELS },
+  { group: 'Linx 8800 Series', models: LINX_8800_SERIES_MODELS },
+  { group: 'Linx 8900 Series', models: LINX_8900_SERIES_MODELS },
+  { group: 'Linx 9800 Series', models: LINX_9800_SERIES_MODELS },
+  { group: 'Linx 9900 Series', models: LINX_9900_SERIES_MODELS },
+];
+
+// Flattened authoritative list of all active Linx models
+export const LINX_MODELS: LinxModel[] = [
+  ...LINX_STANDALONE_MODELS,
+  ...LINX_8800_SERIES_MODELS,
+  ...LINX_8900_SERIES_MODELS,
+  ...LINX_9800_SERIES_MODELS,
+  ...LINX_9900_SERIES_MODELS,
 ];
 
 export const UBS_MODELS: UbsModel[] = [
@@ -26,16 +71,107 @@ export const RYNAN_MODELS: RynanModel[] = [
   'TIJ 2.5'
 ];
 
-// Common 8810+ models list (Except 8940 Spectrum)
+// Common 8810+ / 8800+ series models list (Standard CIJ common architecture, except Spectrum models)
 export const LINX_8810_PLUS_MODELS: LinxModel[] = [
-  '8810',
+  '8810', // retained for historical records
   '8820',
+  '8830',
   '8840',
   '8910',
   '8920',
-  '9800',
-  '9900'
+  '8940',
+  '9800', // retained for historical records
+  '9810',
+  '9820',
+  '9830',
+  '9840',
+  '9900',
+  '9910',
+  '9920',
+  '9940',
 ];
+
+/**
+ * Resolves the authoritative list of compatible Linx / manufacturer machine models for any part.
+ * Formats models cleanly for display (e.g. ['8820', '8830', '8840', '8910', '8920', '8940', ...] -> "8800 / 8900 / 9800 / 9900 Series")
+ */
+export function getPartCompatibleModels(part: {
+  brand?: string;
+  modelGroup?: string;
+  applicableModels?: string[];
+}): string[] {
+  if (part.applicableModels && part.applicableModels.length > 0) {
+    return part.applicableModels;
+  }
+  if (part.modelGroup === 'LINX_8810_PLUS_COMMON') {
+    return LINX_8810_PLUS_MODELS;
+  }
+  if (part.modelGroup === 'LINX_8940_SPECTRUM') {
+    return ['8940 Spectrum'];
+  }
+  if (part.modelGroup === 'LINX_5900_7900_SHARED') {
+    return ['5900', '7900'];
+  }
+  if (part.modelGroup === 'LINX_5900') {
+    return ['5900'];
+  }
+  if (part.modelGroup === 'LINX_7900') {
+    return ['7900'];
+  }
+  if (part.modelGroup === 'LINX_CJ400') {
+    return ['CJ400'];
+  }
+  if (part.modelGroup === 'UBS_LCX') {
+    return ['LCX 10'];
+  }
+  if (part.modelGroup === 'UBS_MRX') {
+    return ['MRX 10'];
+  }
+  if (part.modelGroup === 'RYNAN_TIJ') {
+    return ['B1040', 'R20', 'R10', 'TIJ 2.5'];
+  }
+  return [];
+}
+
+/**
+ * Formats compatible models into a concise, scannable human-readable string for UI display.
+ * E.g. "8800 / 8900 / 9800 / 9900 Series" or "8900 / 7900 / 9820" or "5900 / 7900"
+ */
+export function formatCompatibilityString(models: string[]): string {
+  if (!models || models.length === 0) return 'Universal / Accessory';
+  
+  // Check if it matches the common CIJ series family (10+ models across 8800/8900/9800/9900)
+  const isCommonCIJ = models.includes('8820') && models.includes('8920') && (models.includes('9820') || models.includes('9900'));
+  if (isCommonCIJ) {
+    return '8800 / 8900 / 9800 / 9900 Series';
+  }
+  
+  return models.join(' / ');
+}
+
+/**
+ * Checks whether a part is compatible with a given machine model.
+ */
+export function isPartCompatibleWithModel(part: {
+  modelGroup?: string;
+  applicableModels?: string[];
+}, targetModel: string): boolean {
+  if (!targetModel) return true;
+  const models = getPartCompatibleModels(part);
+  const normalizedTarget = targetModel.trim().toLowerCase();
+  
+  // Check exact model match
+  if (models.some(m => m.toLowerCase() === normalizedTarget)) return true;
+
+  // Check family level match (e.g. machine model "8830" matches 8800 series or 8810_PLUS_COMMON)
+  if (part.modelGroup === 'LINX_8810_PLUS_COMMON' && LINX_8810_PLUS_MODELS.some(m => m.toLowerCase() === normalizedTarget)) {
+    return true;
+  }
+  
+  return false;
+}
+
+
 
 export const PARTS_MASTER: PartMasterItem[] = [
   // =========================================================================

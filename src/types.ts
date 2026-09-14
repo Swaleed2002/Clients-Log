@@ -65,18 +65,21 @@ export type ViewState =
 
 export type PrinterBrand = 'LINX' | 'UBS' | 'RYNAN';
 
+export type LinxStandaloneModel = '7900' | '7300' | 'CJ400' | '5900';
+export type Linx8800SeriesModel = '8820' | '8830' | '8840';
+export type Linx8900SeriesModel = '8910' | '8920' | '8940' | '8940 Spectrum';
+export type Linx9800SeriesModel = '9810' | '9820' | '9830' | '9840' | '9840 Spectrum';
+export type Linx9900SeriesModel = '9900' | '9910' | '9920' | '9940' | '9940 Spectrum';
+
 export type LinxModel = 
-  | 'CJ400' 
-  | '5900' 
-  | '7900' 
-  | '8810' 
-  | '8820' 
-  | '8840' 
-  | '8910' 
-  | '8920' 
-  | '8940 Spectrum' 
-  | '9800' 
-  | '9900';
+  | LinxStandaloneModel
+  | Linx8800SeriesModel
+  | Linx8900SeriesModel
+  | Linx9800SeriesModel
+  | Linx9900SeriesModel
+  // Backward compatibility with historical data:
+  | '8810'
+  | '9800';
 
 export type UbsModel = 'MRX 10' | 'LCX 10';
 export type RynanModel = 'B1040' | 'R20' | 'R10' | 'TIJ 2.5';
@@ -123,6 +126,7 @@ export interface PartMasterItem {
   id: string;
   partNumber: string;
   description: string;
+  compatibleModels?: string[];
   brand: PrinterBrand;
   modelGroup: PartModelGroup;
   applicableModels: string[]; // e.g. ['8810', '8820', '8910', '8920', '9800', '9900']
