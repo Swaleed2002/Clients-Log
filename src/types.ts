@@ -275,6 +275,7 @@ export interface ServiceReportPartUsed {
   partNumber: string;
   description: string;
   brand?: PrinterBrand;
+  compatibleModels?: string[];
   quantity: number;
   source: PartSourceType;
   sourceDetails?: string;

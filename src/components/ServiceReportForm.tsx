@@ -34,7 +34,9 @@ import {
   LINX_MODELS, 
   LINX_8810_PLUS_MODELS, 
   getPartsForModel, 
-  searchParts 
+  searchParts,
+  getPartCompatibleModels,
+  formatCompatibilityString
 } from '../data/partsMaster';
 
 interface ServiceReportFormProps {
@@ -499,35 +501,36 @@ export function ServiceReportForm({
                 const compatText = formatCompatibilityString(compatModels);
 
                 return (
-                <div key={p.id} className="p-2 flex items-center justify-between text-xs hover:bg-gray-50">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono font-black text-gray-900">{p.partNumber}</span>
-                      <span className="text-gray-700 ml-1 font-medium">{p.description}</span>
-                      <span className="text-gray-400 text-[10px] ml-1">({p.category})</span>
+                  <div key={p.id} className="p-2 flex items-center justify-between text-xs hover:bg-gray-50">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-black text-gray-900">{p.partNumber}</span>
+                        <span className="text-gray-700 ml-1 font-medium">{p.description}</span>
+                        <span className="text-gray-400 text-[10px] ml-1">({p.category})</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5">
+                        <span className="font-semibold text-gray-600">Compatible:</span>
+                        <span className="text-blue-700 bg-blue-50 px-1 rounded font-mono text-[9px] border border-blue-100">{compatText}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5">
-                      <span className="font-semibold text-gray-600">Compatible:</span>
-                      <span className="text-blue-700 bg-blue-50 px-1 rounded font-mono text-[9px] border border-blue-100">{compatText}</span>
-                    </div>
+                    <button
+                      onClick={() => handleAddPartToReport({
+                        partId: p.partNumber,
+                        partNumber: p.partNumber,
+                        description: p.description,
+                        brand: p.brand,
+                        quantity: 1,
+                        source: selectedSource,
+                        condition: selectedCondition,
+                        action: selectedAction
+                      })}
+                      className="px-2 py-1 bg-gray-900 hover:bg-black text-white rounded text-[11px] font-bold"
+                    >
+                      + Add to Report
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleAddPartToReport({
-                      partId: p.partNumber,
-                      partNumber: p.partNumber,
-                      description: p.description,
-                      brand: p.brand,
-                      quantity: 1,
-                      source: selectedSource,
-                      condition: selectedCondition,
-                      action: selectedAction
-                    })}
-                    className="px-2 py-1 bg-gray-900 hover:bg-black text-white rounded text-[11px] font-bold"
-                  >
-                    + Add to Report
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

@@ -48,8 +48,10 @@ export function WorkOrderFields(p: Props) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [activePartIndex, setActivePartIndex] = useState<number | null>(null);
-  const [partSearch, setPartSearch] = useState<{ [index: number]: string }>({});
+  // Track active autocomplete field: { index: number, field: 'partNumber' | 'description' } | null
+  const [activeField, setActiveField] = useState<{ index: number; field: 'partNumber' | 'description' } | null>(null);
+  // Separate search query strings for part number and description per row
+  const [searchQueries, setSearchQueries] = useState<{ [key: string]: string }>({});
 
   const update = (index: number, data: Partial<ServiceReportPartUsed>) =>
     p.setParts(p.parts.map((part, i) => i === index ? { ...part, ...data } : part));
@@ -67,9 +69,52 @@ export function WorkOrderFields(p: Props) {
     // Selected machine model for machine-aware prioritizing
   const selectedMachine = p.machines.find(m => m.id === p.machineId);
   const selectedMachineModel = selectedMachine?.model || '';
+  // Close autocomplete on outside tap/click
+  const containerRef = useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const handleDocumentClick = (e: MouseEvent | TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setActiveField(null);
+      }
+    };
+    document.addEventListener('mousedown', handleDocumentClick);
+    document.addEventListener('touchstart', handleDocumentClick, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentClick);
+      document.removeEventListener('touchstart', handleDocumentClick);
+    };
+  }, []);
+
+  // Helper to get machine-aware search results for any query
+  const getSuggestions = (rawQuery: string) => {
+    const q = rawQuery.trim().toLowerCase();
+    
+    // If blank or very short, provide browse list (sorted by machine compatibility if selected)
+    let pool = PARTS_MASTER;
+    if (q.length > 0) {
+      pool = PARTS_MASTER.filter(pm =>
+        pm.partNumber.toLowerCase().includes(q) ||
+        pm.description.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort machine-compatible parts first
+    const sorted = [...pool].sort((a, b) => {
+      if (selectedMachineModel) {
+        const aCompat = isPartCompatibleWithModel(a, selectedMachineModel);
+        const bCompat = isPartCompatibleWithModel(b, selectedMachineModel);
+        if (aCompat && !bCompat) return -1;
+        if (!aCompat && bCompat) return 1;
+      }
+      return 0;
+    });
+
+    return sorted.slice(0, 10);
+  };
+
 
   return (
-    <section className="bg-white p-4 sm:p-5 rounded-xl border border-gray-200 shadow-sm space-y-5">
+    <section ref={containerRef} className="bg-white p-4 sm:p-5 rounded-xl border border-gray-200 shadow-sm space-y-5">
       <div className="border-b border-gray-100 pb-3">
         <h3 className="font-bold text-gray-900 text-base flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#E61C24]"></span>
@@ -222,7 +267,7 @@ export function WorkOrderFields(p: Props) {
                 source: 'OTHER',
                 condition: 'New'
               }]);
-              setActivePartIndex(nextIndex);
+              setActiveField({ index: nextIndex, field: 'partNumber' });
             }}
           >
             <Plus className="w-3.5 h-3.5" /> Add Part
@@ -236,31 +281,17 @@ export function WorkOrderFields(p: Props) {
         )}
 
         {p.parts.map((part, i) => {
-          const currentSearch = partSearch[i] ?? part.partNumber;
+          const isPartNumberActive = activeField?.index === i && activeField?.field === 'partNumber';
+          const isDescriptionActive = activeField?.index === i && activeField?.field === 'description';
           
-          // Machine-aware search & ranking
-          let filteredParts: typeof PARTS_MASTER = [];
-          if (currentSearch.trim().length > 0) {
-            const query = currentSearch.toLowerCase().trim();
-            const matched = PARTS_MASTER.filter(pm =>
-              pm.partNumber.toLowerCase().includes(query) ||
-              pm.description.toLowerCase().includes(query)
-            );
+          const pnQueryKey = `${i}_pn`;
+          const descQueryKey = `${i}_desc`;
 
-            if (selectedMachineModel) {
-              // Prioritize parts compatible with the selected machine
-              const compatibleFirst = [...matched].sort((a, b) => {
-                const aCompat = isPartCompatibleWithModel(a, selectedMachineModel);
-                const bCompat = isPartCompatibleWithModel(b, selectedMachineModel);
-                if (aCompat && !bCompat) return -1;
-                if (!aCompat && bCompat) return 1;
-                return 0;
-              });
-              filteredParts = compatibleFirst.slice(0, 8);
-            } else {
-              filteredParts = matched.slice(0, 8);
-            }
-          }
+          const pnQuery = searchQueries[pnQueryKey] !== undefined ? searchQueries[pnQueryKey] : (part.partNumber || '');
+          const descQuery = searchQueries[descQueryKey] !== undefined ? searchQueries[descQueryKey] : (part.description || '');
+
+          const activeQuery = isPartNumberActive ? pnQuery : (isDescriptionActive ? descQuery : '');
+          const suggestions = (isPartNumberActive || isDescriptionActive) ? getSuggestions(activeQuery) : [];
 
           // Determine compatible models for this selected part (from part.compatibleModels or matching PARTS_MASTER)
           const matchedMasterPart = PARTS_MASTER.find(pm => pm.partNumber.toLowerCase() === (part.partNumber || '').toLowerCase().trim());
@@ -269,9 +300,11 @@ export function WorkOrderFields(p: Props) {
             : (matchedMasterPart ? getPartCompatibleModels(matchedMasterPart) : []);
           const compatibilityText = formatCompatibilityString(partCompatibleList);
           const isCompatibleWithCurrent = selectedMachineModel ? (matchedMasterPart ? isPartCompatibleWithModel(matchedMasterPart, selectedMachineModel) : true) : true;
+          
+          const isCardActive = activeField?.index === i;
 
           return (
-            <div key={i} className="border border-gray-200 rounded-xl p-3.5 space-y-3 bg-gray-50/50 shadow-xs relative">
+            <div key={i} className={`border border-gray-200 rounded-xl p-3.5 space-y-3 bg-gray-50/50 shadow-xs relative ${isCardActive ? 'z-40' : 'z-0'}`}>
               <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                 <span className="text-xs font-bold text-gray-700">Part #{i + 1}</span>
                 <button
@@ -279,7 +312,7 @@ export function WorkOrderFields(p: Props) {
                   className="text-red-600 hover:text-red-800 text-xs font-bold flex items-center gap-1"
                   onClick={() => {
                     p.setParts(p.parts.filter((_, n) => n !== i));
-                    if (activePartIndex === i) setActivePartIndex(null);
+                    if (activeField?.index === i) setActiveField(null);
                   }}
                 >
                   <Trash2 className="w-3 h-3" /> Remove
@@ -287,28 +320,51 @@ export function WorkOrderFields(p: Props) {
               </div>
 
               {/* Part Number with Autocomplete */}
-              <div className="relative">
-                <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase tracking-wider">
-                  Part Number
-                </label>
+              <div className="relative z-50">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                    Part Number
+                  </label>
+                  {isPartNumberActive && (
+                    <span className="text-[10px] text-red-600 font-bold animate-pulse">
+                      Tap suggestion below
+                    </span>
+                  )}
+                </div>
                 <input
                   aria-label={`Part number ${i + 1}`}
-                  placeholder="Search part number or enter manual code..."
+                  placeholder="Type part # (e.g. FA16103, vent, pump)..."
                   className={field}
                   value={part.partNumber}
-                  onFocus={() => setActivePartIndex(i)}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onFocus={() => {
+                    setActiveField({ index: i, field: 'partNumber' });
+                    setSearchQueries(prev => ({ ...prev, [pnQueryKey]: part.partNumber || '' }));
+                  }}
                   onChange={e => {
                     const val = e.target.value;
-                    setPartSearch(prev => ({ ...prev, [i]: val }));
+                    setSearchQueries(prev => ({ ...prev, [pnQueryKey]: val }));
                     update(i, { partNumber: val, partId: val });
-                    setActivePartIndex(i);
+                    setActiveField({ index: i, field: 'partNumber' });
                   }}
                 />
 
-                {/* Autocomplete dropdown */}
-                {activePartIndex === i && filteredParts.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl z-30 max-h-64 overflow-y-auto divide-y divide-gray-100">
-                    {filteredParts.map(pm => {
+                {/* Autocomplete dropdown for Part Number */}
+                {isPartNumberActive && suggestions.length > 0 && (
+                  <div 
+                    className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-red-500 rounded-xl shadow-2xl z-50 max-h-72 overflow-y-auto divide-y divide-gray-100 ring-4 ring-red-500/10"
+                    onMouseDown={e => e.stopPropagation()}
+                    onTouchStart={e => e.stopPropagation()}
+                  >
+                    <div className="px-2.5 py-1 bg-gray-50 text-[10px] font-bold text-gray-500 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10">
+                      <span>Suggestions ({suggestions.length})</span>
+                      {selectedMachineModel && (
+                        <span className="text-green-700 font-bold">Prioritizing {selectedMachineModel}</span>
+                      )}
+                    </div>
+                    {suggestions.map(pm => {
                       const pmCompatModels = getPartCompatibleModels(pm);
                       const pmCompatString = formatCompatibilityString(pmCompatModels);
                       const isMatchesMachine = selectedMachineModel ? isPartCompatibleWithModel(pm, selectedMachineModel) : false;
@@ -317,8 +373,8 @@ export function WorkOrderFields(p: Props) {
                         <button
                           key={pm.id}
                           type="button"
-                          className={`w-full text-left p-2.5 hover:bg-red-50 text-xs flex flex-col gap-1 transition-colors ${
-                            isMatchesMachine ? 'bg-green-50/40 hover:bg-green-100/50' : ''
+                          className={`w-full text-left p-3 hover:bg-red-50 active:bg-red-100 text-xs flex flex-col gap-1 transition-colors ${
+                            isMatchesMachine ? 'bg-green-50/50' : ''
                           }`}
                           onClick={() => {
                             update(i, {
@@ -328,25 +384,29 @@ export function WorkOrderFields(p: Props) {
                               brand: pm.brand,
                               compatibleModels: pmCompatModels,
                             });
-                            setPartSearch(prev => ({ ...prev, [i]: pm.partNumber }));
-                            setActivePartIndex(null);
+                            setSearchQueries(prev => ({
+                              ...prev,
+                              [pnQueryKey]: pm.partNumber,
+                              [descQueryKey]: pm.description,
+                            }));
+                            setActiveField(null);
                           }}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-black text-gray-900">{pm.partNumber}</span>
+                              <span className="font-black text-gray-900 text-sm">{pm.partNumber}</span>
                               {isMatchesMachine && (
-                                <span className="inline-flex items-center text-[9px] px-1.5 py-0.2 rounded bg-green-100 text-green-800 font-bold border border-green-200">
+                                <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-bold border border-green-300">
                                   ✓ Fits {selectedMachineModel}
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold uppercase">{pm.brand}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-bold uppercase">{pm.brand}</span>
                           </div>
-                          <span className="text-gray-800 text-[11px] font-medium leading-snug">{pm.description}</span>
-                          <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium">
+                          <span className="text-gray-800 text-[11px] font-semibold leading-snug">{pm.description}</span>
+                          <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium mt-0.5">
                             <span className="font-bold text-gray-700">Compatible:</span>
-                            <span className="text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-mono border border-blue-100">
+                            <span className="text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded font-mono font-bold border border-blue-200">
                               {pmCompatString}
                             </span>
                           </div>
@@ -358,28 +418,51 @@ export function WorkOrderFields(p: Props) {
               </div>
 
               {/* Description with reverse autocomplete */}
-              <div className="relative">
-                <label className="block text-[11px] font-bold text-gray-600 mb-1 uppercase tracking-wider">
-                  Part Description
-                </label>
+              <div className="relative z-40">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                    Part Description
+                  </label>
+                  {isDescriptionActive && (
+                    <span className="text-[10px] text-red-600 font-bold animate-pulse">
+                      Tap suggestion below
+                    </span>
+                  )}
+                </div>
                 <input
                   aria-label={`Part description ${i + 1}`}
                   placeholder="Search by part description or name..."
                   className={field}
                   value={part.description}
-                  onFocus={() => setActivePartIndex(i + 1000)} // offset for description focus
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onFocus={() => {
+                    setActiveField({ index: i, field: 'description' });
+                    setSearchQueries(prev => ({ ...prev, [descQueryKey]: part.description || '' }));
+                  }}
                   onChange={e => {
                     const val = e.target.value;
+                    setSearchQueries(prev => ({ ...prev, [descQueryKey]: val }));
                     update(i, { description: val });
-                    setPartSearch(prev => ({ ...prev, [i]: val }));
-                    setActivePartIndex(i + 1000);
+                    setActiveField({ index: i, field: 'description' });
                   }}
                 />
 
                 {/* Description Autocomplete dropdown */}
-                {activePartIndex === (i + 1000) && filteredParts.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl z-30 max-h-64 overflow-y-auto divide-y divide-gray-100">
-                    {filteredParts.map(pm => {
+                {isDescriptionActive && suggestions.length > 0 && (
+                  <div 
+                    className="absolute left-0 right-0 top-full mt-1.5 bg-white border-2 border-red-500 rounded-xl shadow-2xl z-50 max-h-72 overflow-y-auto divide-y divide-gray-100 ring-4 ring-red-500/10"
+                    onMouseDown={e => e.stopPropagation()}
+                    onTouchStart={e => e.stopPropagation()}
+                  >
+                    <div className="px-2.5 py-1 bg-gray-50 text-[10px] font-bold text-gray-500 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10">
+                      <span>Suggestions ({suggestions.length})</span>
+                      {selectedMachineModel && (
+                        <span className="text-green-700 font-bold">Prioritizing {selectedMachineModel}</span>
+                      )}
+                    </div>
+                    {suggestions.map(pm => {
                       const pmCompatModels = getPartCompatibleModels(pm);
                       const pmCompatString = formatCompatibilityString(pmCompatModels);
                       const isMatchesMachine = selectedMachineModel ? isPartCompatibleWithModel(pm, selectedMachineModel) : false;
@@ -388,8 +471,8 @@ export function WorkOrderFields(p: Props) {
                         <button
                           key={pm.id}
                           type="button"
-                          className={`w-full text-left p-2.5 hover:bg-red-50 text-xs flex flex-col gap-1 transition-colors ${
-                            isMatchesMachine ? 'bg-green-50/40 hover:bg-green-100/50' : ''
+                          className={`w-full text-left p-3 hover:bg-red-50 active:bg-red-100 text-xs flex flex-col gap-1 transition-colors ${
+                            isMatchesMachine ? 'bg-green-50/50' : ''
                           }`}
                           onClick={() => {
                             update(i, {
@@ -399,25 +482,29 @@ export function WorkOrderFields(p: Props) {
                               brand: pm.brand,
                               compatibleModels: pmCompatModels,
                             });
-                            setPartSearch(prev => ({ ...prev, [i]: pm.partNumber }));
-                            setActivePartIndex(null);
+                            setSearchQueries(prev => ({
+                              ...prev,
+                              [pnQueryKey]: pm.partNumber,
+                              [descQueryKey]: pm.description,
+                            }));
+                            setActiveField(null);
                           }}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-gray-900 text-xs">{pm.description}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold uppercase">{pm.brand}</span>
+                            <span className="font-bold text-gray-900 text-sm">{pm.description}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-bold uppercase">{pm.brand}</span>
                           </div>
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono text-gray-700 font-bold">Part No: {pm.partNumber}</span>
+                          <div className="flex items-center justify-between text-[11px] mt-0.5">
+                            <span className="font-mono text-gray-800 font-bold">Part No: {pm.partNumber}</span>
                             {isMatchesMachine && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-green-100 text-green-800 font-bold border border-green-200">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-bold border border-green-300">
                                 ✓ Fits {selectedMachineModel}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium">
+                          <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium mt-0.5">
                             <span className="font-bold text-gray-700">Compatible:</span>
-                            <span className="text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-mono border border-blue-100">
+                            <span className="text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded font-mono font-bold border border-blue-200">
                               {pmCompatString}
                             </span>
                           </div>
