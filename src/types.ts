@@ -24,6 +24,13 @@ export interface WorkEntry {
   userId: string;
   date: string; // YYYY-MM-DD
   workType: WorkType;
+  machineId?: string;
+  machineSerial?: string;
+  machineModel?: string;
+  complaint?: string;
+  technicianName?: string;
+  partsUsed?: ServiceReportPartUsed[];
+  workOrderImage?: string;
   deliveryType?: 'Delivery of Consumables' | 'Delivery of Parts';
   customerName: string;
   location: string;
@@ -276,6 +283,10 @@ export interface ServiceReportPartUsed {
 }
 
 export interface ServiceReport {
+  linkedEntryId?: string;
+  machineId?: string;
+  complaint?: string;
+  workOrderImage?: string;
   id?: string;
   userId: string;
   reportNo: string;

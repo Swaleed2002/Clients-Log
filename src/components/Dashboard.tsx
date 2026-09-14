@@ -205,13 +205,7 @@ export function Dashboard({
             <span className="text-[10px] font-black uppercase">Machines</span>
           </button>
 
-          <button
-            onClick={onOpenServiceReports}
-            className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
-          >
-            <FileText className="w-5 h-5 text-red-400" />
-            <span className="text-[10px] font-black uppercase">Work Orders</span>
-          </button>
+
 
           <button
             onClick={onOpenEngineerBag}
@@ -346,31 +340,7 @@ export function Dashboard({
           </button>
 
           {/* Service Reports / Work Orders */}
-          <button
-            onClick={onOpenServiceReports}
-            className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-[#E61C24] hover:shadow-md transition-all text-left group flex flex-col justify-between"
-          >
-            <div>
-              <div className="w-11 h-11 rounded-xl bg-red-50 text-[#E61C24] flex items-center justify-center mb-3 group-hover:scale-105 transition-transform border border-red-100">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-black text-gray-900 uppercase tracking-wide">
-                  Service Reports
-                </p>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-800">
-                  Field Orders
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                Complete official A4 field service work orders, structured parts used, and digital customer signatures.
-              </p>
-            </div>
-            <div className="flex items-center text-red-700 font-bold text-xs mt-4 group-hover:translate-x-1 transition-transform">
-              <span>View & Create Reports</span>
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </div>
-          </button>
+
 
           {/* Parts Master Catalog */}
           <button

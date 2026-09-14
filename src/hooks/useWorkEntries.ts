@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { WorkEntry } from '../types';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, setDoc, deleteDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, setDoc, deleteDoc, doc, getDocs, writeBatch } from 'firebase/firestore';
 
 export function useWorkEntries(userId?: string) {
   const [entries, setEntries] = useState<WorkEntry[]>([]);
@@ -31,6 +31,27 @@ export function useWorkEntries(userId?: string) {
     return () => unsubscribe();
   }, [userId]);
 
+  const persistEntry = async (entry: WorkEntry) => {
+    if (new TextEncoder().encode(JSON.stringify(entry)).length > 950000) {
+      throw new Error('Work entry is too large. Use a smaller Work Order image or shorten the details.');
+    }
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'entries', entry.id), entry);
+    if (entry.machineId) {
+      batch.set(doc(db, 'serviceReports', 'entry_' + entry.id), {
+        id: 'entry_' + entry.id, linkedEntryId: entry.id, machineId: entry.machineId,
+        userId: entry.userId, reportNo: 'JOB-' + entry.id, date: entry.date,
+        customer: entry.customerName, address: entry.location,
+        modelNumber: entry.machineModel || '', printerSerial: entry.machineSerial || '',
+        complaint: entry.complaint || '', jobCarriedOut: entry.jobCategory,
+        remarks: entry.remarks, engineerName: entry.technicianName || entry.userId,
+        partsUsed: entry.partsUsed || [], workOrderImage: entry.workOrderImage || '',
+        createdAt: entry.createdAt, updatedAt: entry.updatedAt
+      });
+    }
+    await batch.commit();
+  };
+
   const addEntry = async (entry: Omit<WorkEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
     if (!userId) return null;
     const newDocRef = doc(collection(db, 'entries'));
@@ -45,9 +66,10 @@ export function useWorkEntries(userId?: string) {
     // Update local state optimistically
     setEntries(prev => [newEntry, ...prev].sort((a, b) => b.createdAt - a.createdAt));
     try {
-      await setDoc(newDocRef, newEntry);
+      await persistEntry(newEntry);
     } catch (err) {
-      console.error("Failed to add entry", err);
+      setEntries(prev => prev.filter(e => e.id !== newEntry.id));
+      throw err;
     }
     return newEntry;
   };
@@ -67,9 +89,10 @@ export function useWorkEntries(userId?: string) {
     // Optimistic
     setEntries(prev => prev.map(e => e.id === id ? mergedEntry : e));
     try {
-      await setDoc(doc(db, 'entries', id), mergedEntry);
+      await persistEntry(mergedEntry);
     } catch (err) {
-      console.error("Failed to update entry", err);
+      setEntries(prev => prev.map(e => e.id === id ? existing : e));
+      throw err;
     }
   };
 

@@ -5,15 +5,13 @@ import { WorkEntryForm } from './components/WorkEntryForm';
 import { WeeklyReport } from './components/WeeklyReport';
 import { Login } from './components/Login';
 import { AdminPanel } from './components/AdminPanel';
-import { ServiceReportsList } from './components/ServiceReportsList';
-import { ServiceReportForm } from './components/ServiceReportForm';
 import { PartsCatalog } from './components/PartsCatalog';
 import { StoreInventory } from './components/StoreInventory';
 import { EngineerParts } from './components/EngineerParts';
 import { TestingBackupTracker } from './components/TestingBackupTracker';
 import { ClientMachines } from './components/ClientMachines';
 import { exportToExcel } from './utils';
-import { WorkEntry, ViewState, EngineerBagItem, PartMasterItem } from './types';
+import { WorkEntry, ViewState, EngineerBagItem, PartMasterItem, CustomerMachine } from './types';
 import { 
   DatabaseBackup, 
   UploadCloud, 
@@ -52,7 +50,7 @@ export default function App() {
 
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [editingEntry, setEditingEntry] = useState<WorkEntry | undefined>(undefined);
-  const [activeServiceReport, setActiveServiceReport] = useState<any>(undefined);
+  const [entryMachine, setEntryMachine] = useState<CustomerMachine | undefined>();
   const [preselectedBagItem, setPreselectedBagItem] = useState<EngineerBagItem | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   
@@ -79,19 +77,23 @@ export default function App() {
 
   const handleAddEntry = () => {
     setEditingEntry(undefined);
+    setEntryMachine(undefined);
+    setPreselectedBagItem(null);
     setCurrentView('form');
   };
 
   const handleEditEntry = (entry: WorkEntry) => {
+    setEntryMachine(undefined);
+    setPreselectedBagItem(null);
     setEditingEntry(entry);
     setCurrentView('form');
   };
 
-  const handleSaveEntry = (entryData: Omit<WorkEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
+  const handleSaveEntry = async (entryData: Omit<WorkEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
     if (editingEntry) {
-      updateEntry(editingEntry.id, entryData);
+      await updateEntry(editingEntry.id, entryData);
     } else {
-      addEntry(entryData);
+      await addEntry(entryData);
     }
   };
 
@@ -175,7 +177,7 @@ export default function App() {
             onAddEntry={handleAddEntry}
             onViewReport={() => setCurrentView('report')}
             onExport={() => handleExport(entries, new Date())}
-            onOpenServiceReports={() => setCurrentView('serviceReportsList')}
+            onOpenServiceReports={handleAddEntry}
             onOpenPartsCatalog={() => setCurrentView('partsCatalog')}
             onOpenStoreInventory={() => setCurrentView('storeInventory')}
             onOpenEngineerBag={() => setCurrentView('engineerParts')}
@@ -187,6 +189,9 @@ export default function App() {
         
         {currentView === 'form' && (
           <WorkEntryForm 
+            technicianName={profile.fullName}
+            machine={entryMachine}
+            initialPart={preselectedBagItem ? { partId: preselectedBagItem.partId, partNumber: preselectedBagItem.partNumber, description: preselectedBagItem.description, quantity: 1, source: preselectedBagItem.id.startsWith('temp_') ? 'OTHER' : 'MY BAG', condition: preselectedBagItem.condition } : undefined}
             initialData={editingEntry}
             onSave={handleSaveEntry}
             onCancel={() => setCurrentView(editingEntry ? 'report' : 'dashboard')}
@@ -195,33 +200,6 @@ export default function App() {
           />
         )}
         
-        {currentView === 'serviceReportsList' && (
-          <ServiceReportsList 
-            currentUser={profile}
-            onBack={() => setCurrentView('dashboard')}
-            onNew={() => {
-              setActiveServiceReport(undefined);
-              setPreselectedBagItem(null);
-              setCurrentView('serviceReportForm');
-            }}
-            onEdit={(report) => {
-              setActiveServiceReport(report);
-              setPreselectedBagItem(null);
-              setCurrentView('serviceReportForm');
-            }}
-          />
-        )}
-
-        {currentView === 'serviceReportForm' && (
-          <ServiceReportForm 
-            initialData={activeServiceReport}
-            currentUser={profile}
-            preselectedBagItem={preselectedBagItem}
-            onBack={() => setCurrentView('serviceReportsList')}
-            onSaved={() => setCurrentView('serviceReportsList')}
-          />
-        )}
-
         {currentView === 'partsCatalog' && (
           <div className="space-y-4">
             <div className="max-w-7xl mx-auto px-4 pt-4 flex items-center">
@@ -235,7 +213,7 @@ export default function App() {
             <PartsCatalog 
               currentUser={profile}
               onSelectPartForReport={(part: PartMasterItem) => {
-                setActiveServiceReport(undefined);
+                handleAddEntry();
                 setPreselectedBagItem({
                   id: `temp_${part.partNumber}`,
                   engineerId: profile.userId,
@@ -248,7 +226,7 @@ export default function App() {
                   condition: 'New',
                   updatedAt: Date.now()
                 });
-                setCurrentView('serviceReportForm');
+                setCurrentView('form');
               }}
               onRequestFromStore={(part: PartMasterItem) => {
                 setCurrentView('storeInventory');
@@ -284,9 +262,9 @@ export default function App() {
             <EngineerParts 
               currentUser={profile}
               onOpenServiceReport={(bagItem: EngineerBagItem) => {
-                setActiveServiceReport(undefined);
+                handleAddEntry();
                 setPreselectedBagItem(bagItem);
-                setCurrentView('serviceReportForm');
+                setCurrentView('form');
               }}
               onOpenCatalog={() => setCurrentView('partsCatalog')}
             />
@@ -320,15 +298,9 @@ export default function App() {
             <ClientMachines 
               currentUser={profile} 
               onOpenServiceReport={(machine) => {
-                setActiveServiceReport({
-                  customer: machine.customerName,
-                  modelNumber: machine.model,
-                  printerSerial: machine.serialNumber,
-                  printHeadSerial: machine.printHeadSerial || '',
-                  inkBatch: machine.ink ? `${machine.ink} / ${machine.solvent || ''}`.trim() : '',
-                  address: machine.location || ''
-                });
-                setCurrentView('serviceReportForm');
+                handleAddEntry();
+                setEntryMachine(machine);
+                setCurrentView('form');
               }}
             />
           </div>
@@ -357,7 +329,7 @@ export default function App() {
       {currentView !== 'login' && currentView !== 'admin' && currentView !== 'form' && currentView !== 'serviceReportForm' && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 h-16 flex items-center justify-around px-2 pb-safe z-40 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           <NavItem view="dashboard" icon={Home} label="HOME" />
-          <NavItem view="serviceReportsList" icon={FileText} label="WORK ORDER" />
+
           
           <button 
             onClick={handleAddEntry}

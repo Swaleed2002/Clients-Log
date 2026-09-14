@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { WorkEntry, WorkType } from '../types';
+import { WorkEntry, WorkType, CustomerMachine, ServiceReportPartUsed } from '../types';
 import { format } from 'date-fns';
 import { cn, calculateDuration, formatDuration } from '../utils';
 import { ArrowLeft, Save, MapPin, Building, Clock, Briefcase, FileText, CheckCircle2, PlayCircle, StopCircle, Pencil } from 'lucide-react';
 
+import { db } from '../firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { offlineDb } from '../db/indexedDb';
+import { WorkOrderFields, readWorkOrderImage } from './WorkOrderFields';
+
 interface WorkEntryFormProps {
   initialData?: WorkEntry;
-  onSave: (entry: Omit<WorkEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'syncStatus'>) => void;
+  onSave: (entry: Omit<WorkEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'syncStatus'>) => Promise<void>;
+  technicianName: string;
+  machine?: CustomerMachine;
+  initialPart?: ServiceReportPartUsed;
   onCancel: () => void;
   uniqueCustomers: string[];
   uniqueLocations: string[];
@@ -25,12 +33,12 @@ const JOB_CATEGORIES = [
   'Other'
 ];
 
-export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, uniqueLocations }: WorkEntryFormProps) {
+export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, uniqueLocations, technicianName, machine, initialPart }: WorkEntryFormProps) {
   const [date, setDate] = useState(initialData?.date || format(new Date(), 'yyyy-MM-dd'));
   const [workType, setWorkType] = useState<WorkType>(initialData?.workType || 'Customer');
   const [deliveryType, setDeliveryType] = useState<'Delivery of Consumables' | 'Delivery of Parts' | ''>(initialData?.deliveryType || '');
-  const [customerName, setCustomerName] = useState(initialData?.customerName || '');
-  const [location, setLocation] = useState(initialData?.location || '');
+  const [customerName, setCustomerName] = useState(initialData?.customerName || machine?.customerName || '');
+  const [location, setLocation] = useState(initialData?.location || machine?.location || '');
   
   const [travelStart, setTravelStart] = useState(initialData?.travelStart || (initialData as any)?.travelToStart || '');
   const [travelStop, setTravelStop] = useState(initialData?.travelStop || (initialData as any)?.travelToEnd || '');
@@ -43,6 +51,26 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
   const [jobCategory, setJobCategory] = useState(initialData?.jobCategory || '');
   const [remarks, setRemarks] = useState(initialData?.remarks || '');
   
+  const [machines, setMachines] = useState<CustomerMachine[]>([]);
+  const [machineId, setMachineId] = useState(initialData?.machineId || machine?.id || '');
+  const [complaint, setComplaint] = useState(initialData?.complaint || '');
+  const [partsUsed, setPartsUsed] = useState<ServiceReportPartUsed[]>(initialData?.partsUsed || (initialPart ? [initialPart] : []));
+  const [workOrderImage, setWorkOrderImage] = useState(initialData?.workOrderImage || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [machineLoadError, setMachineLoadError] = useState('');
+  useEffect(() => onSnapshot(collection(db, 'customerMachines'), snap => {
+    setMachineLoadError('');
+    setMachines(snap.docs.map(d => ({ ...d.data(), id: d.id } as CustomerMachine)));
+  }, err => {
+    if (err.code === 'permission-denied') {
+      setMachines([]);
+      setMachineLoadError('Machine access denied by Firestore. Contact the project administrator to check the database rules.');
+      return;
+    }
+    setMachineLoadError('Machines could not be loaded from the cloud. Showing any saved offline machines.');
+    offlineDb.customerMachines.toArray().then(setMachines).catch(() => setMachineLoadError('Could not load machines. Please reconnect.'));
+  }), []);
   const [showSavedMsg, setShowSavedMsg] = useState(false);
 
   useEffect(() => {
@@ -62,7 +90,8 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
 
   const getCurrentTimeHHmm = () => format(new Date(), 'HH:mm');
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (busy || showSavedMsg) return;
     if (!date || !workType || !jobCategory) {
       alert('Please fill Date, Work Type, and Job Category');
       return;
@@ -76,7 +105,15 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
       return;
     }
 
-    onSave({
+    const selected = machines.find(m => m.id === machineId) || (machine?.id === machineId ? machine : undefined);
+    if ((initialData?.machineId || workOrderImage || partsUsed.length || complaint) && !selected) { setError('Select the machine for this service.'); return; }
+    if (selected && selected.customerName.trim().toLowerCase() !== customerName.trim().toLowerCase()) { setError('Selected machine belongs to a different customer.'); return; }
+    if (partsUsed.some(p => !p.partNumber.trim() || !p.description.trim() || !Number.isInteger(p.quantity) || p.quantity < 1)) { setError('Each part needs a number, description and positive whole quantity.'); return; }
+    setBusy(true); setError('');
+    try {
+    await onSave({
+      machineId, machineSerial: selected?.serialNumber || '', machineModel: selected?.model || '',
+      complaint, partsUsed, workOrderImage, technicianName: initialData?.technicianName || technicianName,
       date,
       workType,
       ...(workType === 'Delivery' ? { deliveryType: deliveryType as any } : {}),
@@ -94,6 +131,7 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
     setTimeout(() => {
       onCancel();
     }, 800);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save. Please retry.'); } finally { setBusy(false); }
   };
 
   const handleChipClick = (cat: string) => {
@@ -317,6 +355,9 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
           )}
         </section>
 
+        <WorkOrderFields machines={machines} machineId={machineId} onMachine={m => { setMachineId(m?.id || ''); if (m) { setCustomerName(m.customerName); setLocation(m.location || location); } }} complaint={complaint} setComplaint={setComplaint} parts={partsUsed} setParts={setPartsUsed} image={workOrderImage} onImage={async file => { setBusy(true); setError(''); try { setWorkOrderImage(await readWorkOrderImage(file)); } catch (err) { setError(String(err)); } finally { setBusy(false); } }} removeImage={() => setWorkOrderImage('')} busy={busy} technician={initialData?.technicianName || technicianName} />
+        {machineLoadError && <p role="alert" className="text-red-700">{machineLoadError}</p>}
+        {error && <p role="alert" className="text-red-700">{error}</p>}
         {/* Work Details Section */}
         <section className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
           <div>
@@ -360,6 +401,7 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
         <div className="max-w-3xl mx-auto flex items-center gap-4">
            {showSavedMsg && <span className="text-emerald-600 font-bold whitespace-nowrap animate-in fade-in">Entry Saved ✓</span>}
            <button
+            disabled={busy || showSavedMsg}
             onClick={handleSave}
             className="flex-1 bg-[#E61C24] text-white font-bold text-lg py-4 rounded-xl shadow-md hover:bg-red-700 active:bg-red-800 transition-colors flex items-center justify-center"
           >

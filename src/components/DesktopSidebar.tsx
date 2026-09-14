@@ -166,7 +166,6 @@ export function DesktopSidebar({
             Field Operations
           </p>
           <NavItem view="dashboard" icon={Home} label="Dashboard" />
-          <NavItem view="serviceReportsList" icon={FileText} label="Service Reports" />
           <NavItem view="form" icon={Clock} label="Daily Work Log" />
         </div>
 

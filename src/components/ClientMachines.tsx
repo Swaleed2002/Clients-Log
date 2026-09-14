@@ -56,6 +56,7 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
   const [clients, setClients] = useState<Client[]>([]);
   const [transactions, setTransactions] = useState<PartTransaction[]>([]);
   const [reports, setReports] = useState<ServiceReport[]>([]);
+  const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
   
   const [activeTab, setActiveTab] = useState<'MACHINES' | 'CLIENTS'>('MACHINES');
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,10 +99,15 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
       const list: CustomerMachine[] = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() } as CustomerMachine));
       setMachines(list);
+      setLoadErrors(previous => ({ ...previous, machines: '' }));
       offlineDb.customerMachines.bulkPut(list).catch(() => {});
     }, (err) => {
+      setLoadErrors(previous => ({ ...previous, machines: err.code === 'permission-denied'
+        ? 'Machine access denied by Firestore. Contact the project administrator to check the database rules.'
+        : 'Machine cloud data is unavailable. Saved offline data may be incomplete.' }));
+      if (err.code === 'permission-denied') { setMachines([]); return; }
       console.warn("Falling back to local IndexedDB customerMachines:", err);
-      offlineDb.customerMachines.toArray().then(setMachines);
+      offlineDb.customerMachines.toArray().then(setMachines).catch(() => setMachines([]));
     });
 
     return () => unsub();
@@ -138,8 +144,13 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
       const list: ServiceReport[] = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() } as ServiceReport));
       setReports(list);
-    }, () => {
-      offlineDb.serviceReports.toArray().then(setReports);
+      setLoadErrors(previous => ({ ...previous, history: '' }));
+    }, err => {
+      setLoadErrors(previous => ({ ...previous, history: err.code === 'permission-denied'
+        ? 'Service history access denied by Firestore. History cannot be verified until database access is restored.'
+        : 'Service history cloud data is unavailable. Saved offline history may be incomplete.' }));
+      if (err.code === 'permission-denied') { setReports([]); return; }
+      offlineDb.serviceReports.toArray().then(setReports).catch(() => setReports([]));
     });
 
     return () => {
@@ -408,17 +419,16 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
 
   // Machine History
   const machineHistory = selectedMachine ? transactions.filter(t => 
-    t.customerName?.toLowerCase() === selectedMachine.customerName.toLowerCase() ||
+    t.customerName?.toLowerCase() === selectedMachine.customerName.toLowerCase() &&
     t.machineSerial?.toLowerCase() === selectedMachine.serialNumber.toLowerCase()
   ) : [];
 
-  const machineReports = selectedMachine ? reports.filter(r => 
-    r.printerSerial?.toLowerCase() === selectedMachine.serialNumber.toLowerCase() ||
-    r.customer.toLowerCase() === selectedMachine.customerName.toLowerCase()
-  ) : [];
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      {Object.entries(loadErrors).filter(([, message]) => message).map(([key, message]) => (
+        <p key={key} role="alert" className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{message}</p>
+      ))}
       
       {/* Top Banner with Action Buttons */}
       <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -750,7 +760,7 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
                       </div>
                     </div>
 
-                    {/* Quick Button to Create Service Report for this Machine */}
+                    {/* Quick Button to Start Job for this Machine */}
                     {onOpenServiceReport && (
                       <button
                         onClick={() => onOpenServiceReport(selectedMachine)}
@@ -762,6 +772,20 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
                     )}
                   </div>
 
+                  <div className="space-y-3 pt-3">
+                    <h4 className="text-sm font-bold">Service / Work History</h4>
+                    {reports.filter(r => r.machineId ? r.machineId === selectedMachine.id : r.printerSerial?.trim().toLowerCase() === selectedMachine.serialNumber.trim().toLowerCase() && r.customer?.trim().toLowerCase() === selectedMachine.customerName.trim().toLowerCase()).sort((a,b) => b.date.localeCompare(a.date) || b.createdAt-a.createdAt).map(r => (
+                      <article key={r.id} className="bg-white border rounded-xl p-3 space-y-2 text-sm">
+                        <p className="font-bold">{r.date} · {r.engineerName || r.userId}</p>
+                        <p className="whitespace-pre-wrap">Complaint: {r.complaint || 'Not recorded'}</p>
+                        <p className="whitespace-pre-wrap">Work: {r.jobCarriedOut || 'Not recorded'}</p>
+                        {r.remarks && <p className="whitespace-pre-wrap">{r.remarks}</p>}
+                        <p className="font-semibold">Parts Used</p>
+                        {r.partsUsed?.length ? r.partsUsed.map((p,i) => <p key={i}>{p.partNumber} — {p.description} × {p.quantity} ({p.condition}, {p.source})</p>) : <p>{r.partsReplaced || 'None recorded'}</p>}
+                        {r.workOrderImage && <a href={r.workOrderImage} download={'work-order-' + r.date + '.jpg'}><img src={r.workOrderImage} alt={'Physical Work Order — ' + r.date} className="max-h-96 w-full object-contain border rounded" /><span className="text-red-700">Download Work Order image</span></a>}
+                      </article>
+                    ))}
+                  </div>
                   {/* Machine Parts Replacement History */}
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center">

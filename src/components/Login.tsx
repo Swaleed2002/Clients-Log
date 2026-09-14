@@ -52,9 +52,7 @@ export function Login({ onSuccess }: LoginProps) {
         setError(`Login failed: ${err.code}`);
       }
     } finally {
-      if (normalizedUserId !== 'ADMIN' || error) { 
-         setLoading(false);
-      }
+      setLoading(false);
     }
   };
 

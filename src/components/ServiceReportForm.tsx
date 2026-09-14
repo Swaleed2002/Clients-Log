@@ -558,7 +558,7 @@ export function ServiceReportForm({
           Handwriting: Completely removed, 100% clean editable fields
          ========================================================================= */}
       <div 
-        className="w-[210mm] min-h-[297mm] mx-auto bg-white shadow-2xl p-[12mm] text-black relative flex flex-col justify-between print:shadow-none print:m-0 print:p-[10mm]"
+        className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white shadow-2xl p-4 sm:p-[12mm] text-black relative flex flex-col justify-between print:w-[210mm] print:shadow-none print:m-0 print:p-[10mm]"
         style={{
           boxSizing: 'border-box',
           backgroundColor: '#ffffff'
@@ -904,3 +904,4 @@ export function ServiceReportForm({
     </div>
   );
 }
+

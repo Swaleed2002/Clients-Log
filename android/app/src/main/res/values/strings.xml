@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">RELIABLE CODING</string>
+    <string name="title_activity_main">RELIABLE CODING</string>
+    <string name="package_name">com.reliable.fieldengineer</string>
+    <string name="custom_url_scheme">com.reliable.fieldengineer</string>
+</resources>
