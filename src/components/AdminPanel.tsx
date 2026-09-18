@@ -5,6 +5,7 @@ import { collection, query, getDocs, doc, setDoc, deleteDoc, updateDoc, where } 
 import { Users, Lock, UserPlus, UserX, UserCheck, Trash2, ArrowLeft, Download } from 'lucide-react';
 import { DOMAIN_SUFFIX } from '../hooks/useAuth';
 import { exportToExcel } from '../utils';
+import { UserRightsManager } from './UserRightsManager';
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -17,6 +18,7 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [selectedReportUser, setSelectedReportUser] = useState<string>('ALL');
   const [exporting, setExporting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'users' | 'rights'>('users');
   
   // Forms
   const [newUserId, setNewUserId] = useState('');
@@ -216,6 +218,24 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
         </div>
       </div>
 
+      
+      <div className="flex border-b border-gray-200 mb-6">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Users Management
+        </button>
+        <button
+          onClick={() => setActiveTab('rights')}
+          className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'rights' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          User Rights
+        </button>
+      </div>
+
+      {activeTab === 'users' ? ( <div className='w-full'>
+
       {message.text && (
         <div className={`p-4 mb-6 rounded-lg font-bold text-sm ${message.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
           {message.text}
@@ -356,9 +376,14 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
                 ))
               )}
             </div>
+
           </div>
         </div>
       </div>
+      </div>
+      ) : (
+        <UserRightsManager users={users} onUpdate={fetchUsers} />
+      )}
     </div>
   );
 }

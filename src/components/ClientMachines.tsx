@@ -17,6 +17,7 @@ import {
   orderBy 
 } from 'firebase/firestore';
 import { offlineDb } from '../db/indexedDb';
+import { WorkshopCase } from '../types';
 import { 
   Building2, 
   Plus, 
@@ -36,7 +37,8 @@ import {
   Phone,
   Mail,
   MapPin,
-  UserCheck
+  UserCheck,
+  Settings
 } from 'lucide-react';
 import { LINX_MODELS, LINX_MODEL_GROUPS, UBS_MODELS, RYNAN_MODELS } from '../data/partsMaster';
 import { INKS_MASTER } from '../data/inksMaster';
@@ -75,6 +77,7 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
 
   // Form states for new machine
   const [formClientName, setFormClientName] = useState('');
+  const [workshopCases, setWorkshopCases] = useState<WorkshopCase[]>([]);
   const [formBrand, setFormBrand] = useState<PrinterBrand>('LINX');
   const [formModel, setFormModel] = useState<string>('8920');
   const [formSerial, setFormSerial] = useState<string>('');
@@ -139,6 +142,13 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
       offlineDb.partTransactions.toArray().then(setTransactions);
     });
 
+    const qWs = query(collection(db, 'workshopCases'), orderBy('receivedAt', 'desc'));
+    const unsubWs = onSnapshot(qWs, (snap) => {
+      const list: WorkshopCase[] = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() } as WorkshopCase));
+      setWorkshopCases(list);
+    });
+
     const qRep = query(collection(db, 'serviceReports'), orderBy('createdAt', 'desc'));
     const unsubRep = onSnapshot(qRep, (snap) => {
       const list: ServiceReport[] = [];
@@ -156,6 +166,7 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
     return () => {
       unsubTx();
       unsubRep();
+      unsubWs();
     };
   }, []);
 
@@ -786,6 +797,27 @@ export const ClientMachines: React.FC<ClientMachinesProps> = ({
                       </article>
                     ))}
                   </div>
+                  {/* Workshop History */}
+                  <div className="space-y-3 pt-3">
+                    <h4 className="text-sm font-bold flex items-center">
+                      <Settings className="w-4 h-4 mr-2 text-emerald-600" /> Workshop History
+                    </h4>
+                    {workshopCases.filter(ws => ws.machineId === selectedMachine.id).map(ws => (
+                      <article key={ws.id} className="bg-emerald-50/30 border border-emerald-100 rounded-xl p-3 space-y-2 text-sm">
+                        <div className="flex justify-between items-start">
+                          <p className="font-black text-emerald-900">{ws.caseNumber} · {new Date(ws.receivedAt).toLocaleDateString()}</p>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">{ws.status}</span>
+                        </div>
+                        <p className="whitespace-pre-wrap"><span className="font-semibold">Complaint:</span> {ws.complaint}</p>
+                        <p><span className="font-semibold">Engineers:</span> {Array.from(new Set([ws.receivedByName, ...ws.activities.map(a => a.engineerName)])).join(', ')}</p>
+                        {ws.finalResult && <p><span className="font-semibold">Result:</span> {ws.finalResult}</p>}
+                      </article>
+                    ))}
+                    {workshopCases.filter(ws => ws.machineId === selectedMachine.id).length === 0 && (
+                      <p className="text-xs text-gray-500 bg-gray-50 p-3 rounded-xl border border-dashed">No workshop cases for this machine.</p>
+                    )}
+                  </div>
+
                   {/* Machine Parts Replacement History */}
                   <div className="space-y-2 pt-2">
                     <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center">

@@ -1,131 +1,121 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    
     // Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
-
+    
     // Helpers
     function isSignedIn() {
       return request.auth != null;
     }
-
+    
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-
+    
     function isAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'ADMIN';
     }
-
-    function isStore() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserData().role == 'STORE' || getUserData().role == 'ADMIN');
-    }
-
+    
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-
-    function getAppUserId() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? getUserData().userId : '';
-    }
-
-    function incoming() {
-      return request.resource.data;
+    
+    function hasPerm(module, action) {
+      return isSignedIn() && (
+        getUserData().role == 'ADMIN' ||
+        (
+          getUserData().permissions != null &&
+          getUserData().permissions.get(module, {}).get('access', false) == true &&
+          getUserData().permissions.get(module, {}).get(action, false) == true
+        ) ||
+        (
+          getUserData().permissions == null && (
+            (getUserData().role == 'STORE' && (
+              (module == 'inventory' && action in ['view', 'add', 'edit']) ||
+              (module == 'partsIssue' && action in ['view', 'issuePart']) ||
+              (module == 'workshop' && action in ['view', 'approveIn', 'approveOut']) ||
+              (module in ['clients', 'machines', 'serviceReports', 'workEntries'] && action == 'view')
+            )) ||
+            (getUserData().role == 'ENGINEER' && (
+              (module == 'serviceReports' && action in ['view', 'add', 'edit']) ||
+              (module == 'workEntries' && action in ['view', 'add', 'edit']) ||
+              (module == 'workshop' && action in ['view', 'createIn', 'addActivity', 'markReady', 'prepareOut']) ||
+              (module == 'engineerBag' && action == 'view') ||
+              (module in ['clients', 'machines', 'inventory'] && action == 'view')
+            ))
+          )
+        )
+      );
     }
     
-    function existing() {
-      return resource.data;
-    }
-
-    function isValidMachineData(data, isCreate) {
-      return data.customerName is string && data.customerName.size() > 0 && !data.customerName.matches('^[ \t\r\n]*$')
-        && data.brand is string && data.brand.size() > 0
-        && data.model is string && data.model.size() > 0 && !data.model.matches('^[ \t\r\n]*$')
-        && data.serialNumber is string && data.serialNumber.size() > 0 && !data.serialNumber.matches('^[ \t\r\n]*$')
-        // Mandatory for new machines: Printhead Serial Number, Ink, and Solvent
-        && (!isCreate || (
-          data.printHeadSerial is string && data.printHeadSerial.size() > 0 && !data.printHeadSerial.matches('^[ \t\r\n]*$')
-          && data.ink is string && data.ink.size() > 0 && !data.ink.matches('^[ \t\r\n]*$')
-          && data.solvent is string && data.solvent.size() > 0 && !data.solvent.matches('^[ \t\r\n]*$')
-        ))
-        // For updates, if provided, cannot be empty or whitespace-only
-        && (!('printHeadSerial' in data) || (data.printHeadSerial is string && data.printHeadSerial.size() > 0 && !data.printHeadSerial.matches('^[ \t\r\n]*$')))
-        && (!('ink' in data) || (data.ink is string && data.ink.size() > 0 && !data.ink.matches('^[ \t\r\n]*$')))
-        && (!('solvent' in data) || (data.solvent is string && data.solvent.size() > 0 && !data.solvent.matches('^[ \t\r\n]*$')));
-    }
-
     // Users Collection
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin() || isStore();
-      allow list: if isAdmin() || isStore();
-      allow create: if (isAdmin() && (incoming().role == 'ADMIN' || incoming().role == 'STORE' || incoming().role == 'ENGINEER')) || (incoming().userId == 'ADMIN' && incoming().role == 'ADMIN');
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read: if isSignedIn(); 
+      allow create: if isAdmin();
+      allow update: if isOwner(userId) || isAdmin() || hasPerm('users', 'manageRights') || hasPerm('users', 'edit');
+      allow delete: if isAdmin() || hasPerm('users', 'deleteUser');
     }
-
-    // Entries Collection (Engineer Work Logs)
+    
     match /entries/{entryId} {
-      allow get: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
-      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
-      allow create: if (isSignedIn() && incoming().userId == request.auth.uid) || isAdmin();
-      allow update: if (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid) || isAdmin();
-      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+      allow get, list: if isSignedIn();
+      allow create: if hasPerm('workEntries', 'add');
+      allow update: if hasPerm('workEntries', 'edit');
+      allow delete: if hasPerm('workEntries', 'delete');
     }
-
-    // Config Collection (sequence numbers for Service Reports, etc.)
+    
     match /config/{document=**} {
       allow read, write: if isSignedIn();
     }
-
-    // Service Reports Collection
+    
     match /serviceReports/{reportId} {
       allow get, list: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow create: if hasPerm('serviceReports', 'add');
+      allow update: if hasPerm('serviceReports', 'edit');
+      allow delete: if hasPerm('serviceReports', 'delete');
     }
-
-    // Store Inventory Collection
+    
     match /inventory/{itemId} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isStore() || isAdmin();
+      allow create: if hasPerm('inventory', 'add');
+      allow update: if hasPerm('inventory', 'edit');
+      allow delete: if hasPerm('inventory', 'delete');
     }
-
-    // Engineer Bags Collection
+    
     match /engineerBags/{bagItemId} {
-      allow get: if isSignedIn() && (resource.data.engineerId == request.auth.uid || resource.data.engineerId == getAppUserId() || isStore() || isAdmin());
-      allow list: if isSignedIn() && (resource.data.engineerId == request.auth.uid || resource.data.engineerId == getAppUserId() || isStore() || isAdmin());
-      allow create: if isSignedIn() && (incoming().engineerId == request.auth.uid || incoming().engineerId == getAppUserId() || isStore() || isAdmin());
-      allow update: if isSignedIn() && (
-        ((existing().engineerId == request.auth.uid || existing().engineerId == getAppUserId()) && 
-         (incoming().engineerId == request.auth.uid || incoming().engineerId == getAppUserId())) ||
-        isStore() || isAdmin()
-      );
-      allow delete: if isStore() || isAdmin();
+      allow get, list: if isSignedIn();
+      allow create: if hasPerm('engineerBag', 'add') || hasPerm('partsIssue', 'issuePart');
+      allow update: if hasPerm('engineerBag', 'edit') || hasPerm('partsIssue', 'issuePart');
+      allow delete: if hasPerm('engineerBag', 'delete') || hasPerm('partsIssue', 'cancelIssue');
     }
-
-    // Part Transactions Collection
+    
     match /partTransactions/{transactionId} {
       allow get, list: if isSignedIn();
-      allow create, update: if isSignedIn();
+      allow create: if hasPerm('partsIssue', 'issuePart');
+      allow update: if hasPerm('partsIssue', 'cancelIssue');
       allow delete: if isAdmin();
     }
-
-    // Clients Collection
+    
     match /clients/{clientId} {
       allow get, list: if isSignedIn();
-      allow create, update: if isSignedIn() && incoming().name is string && incoming().name.size() > 0 && !incoming().name.matches('^[ \t\r\n]*$');
-      allow delete: if isAdmin();
+      allow create: if hasPerm('clients', 'add');
+      allow update: if hasPerm('clients', 'edit');
+      allow delete: if hasPerm('clients', 'delete');
     }
-
-    // Customer Machines Collection
+    
     match /customerMachines/{machineId} {
       allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isValidMachineData(incoming(), true);
-      allow update: if isSignedIn() && isValidMachineData(incoming(), false);
+      allow create: if hasPerm('machines', 'add');
+      allow update: if hasPerm('machines', 'edit');
+      allow delete: if hasPerm('machines', 'delete');
+    }
+    
+    match /workshopCases/{caseId} {
+      allow get, list: if isSignedIn();
+      allow create: if hasPerm('workshop', 'createIn');
+      allow update: if hasPerm('workshop', 'addActivity') || hasPerm('workshop', 'markReady') || hasPerm('workshop', 'prepareOut') || hasPerm('workshop', 'approveIn') || hasPerm('workshop', 'approveOut') || isAdmin();
       allow delete: if isAdmin();
     }
   }

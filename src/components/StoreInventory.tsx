@@ -6,7 +6,8 @@ import {
   PartCondition, 
   PartPurpose, 
   PartTransaction, 
-  PrinterBrand 
+  PrinterBrand,
+  WorkshopCase
 } from '../types';
 import { PARTS_MASTER } from '../data/partsMaster';
 import { db } from '../firebase';
@@ -70,7 +71,16 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
   const [addLocation, setAddLocation] = useState('Shelf A1');
   const [addMinStock, setAddMinStock] = useState<number>(2);
 
-  // Form states for Issue to Engineer
+
+  const [clients, setClients] = useState<any[]>([]);
+  const [machines, setMachines] = useState<any[]>([]);
+  const [workshopCases, setWorkshopCases] = useState<WorkshopCase[]>([]);
+
+  // Form states for Issue
+  const [issueFor, setIssueFor] = useState<'ENGINEER_BAG' | 'CUSTOMER' | 'WORKSHOP'>('ENGINEER_BAG');
+  const [issueClientId, setIssueClientId] = useState('');
+  const [issueMachineId, setIssueMachineId] = useState('');
+  const [issueWorkshopCaseId, setIssueWorkshopCaseId] = useState('');
   const [issueEngineerId, setIssueEngineerId] = useState('');
   const [issuePartId, setIssuePartId] = useState('');
   const [issueQuantity, setIssueQuantity] = useState<number>(1);
@@ -80,6 +90,24 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
   const [issueRemarks, setIssueRemarks] = useState('');
 
   // 1. Subscribe to Store Inventory
+
+  useEffect(() => {
+    const unsubClients = onSnapshot(collection(db, 'clients'), (snap) => {
+      setClients(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+    const unsubMachines = onSnapshot(collection(db, 'customerMachines'), (snap) => {
+      setMachines(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+    });
+    const unsubWorkshop = onSnapshot(collection(db, 'workshopCases'), (snap) => {
+      const cases = snap.docs.map(d => ({ ...d.data(), id: d.id } as WorkshopCase));
+      setWorkshopCases(cases.filter(c => c.status !== 'Returned to Customer'));
+    });
+    return () => {
+      unsubClients();
+      unsubMachines();
+      unsubWorkshop();
+    }
+  }, []);
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'inventory'), (snap) => {
       const items: StoreInventoryItem[] = [];
@@ -715,9 +743,81 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
               </button>
             </div>
 
+            
             <form onSubmit={handleIssuePart} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-gray-600 mb-1">Select Engineer</label>
+                <label className="block font-bold text-gray-600 mb-1">Issue For / Destination Type <span className="text-red-500">*</span></label>
+                <select
+                  value={issueFor}
+                  onChange={e => {
+                    setIssueFor(e.target.value as any);
+                    if (e.target.value === 'CUSTOMER') setIssuePurpose('Customer Replacement');
+                    if (e.target.value === 'ENGINEER_BAG') setIssuePurpose('Engineer Bag Stock');
+                    if (e.target.value === 'WORKSHOP') setIssuePurpose('Workshop/Other');
+                  }}
+                  required
+                  className="w-full p-2.5 border border-gray-300 rounded-lg font-bold text-sm"
+                >
+                  <option value="ENGINEER_BAG">Engineer Bag Stock (Van Stock)</option>
+                  <option value="CUSTOMER">Customer Site</option>
+                  <option value="WORKSHOP">Workshop</option>
+                </select>
+              </div>
+
+              {issueFor === 'CUSTOMER' && (
+                <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <div>
+                    <label className="block font-bold text-gray-600 mb-1">Customer <span className="text-red-500">*</span></label>
+                    <select
+                      value={issueClientId}
+                      onChange={e => setIssueClientId(e.target.value)}
+                      required
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                    >
+                      <option value="">-- Select Customer --</option>
+                      {clients.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-600 mb-1">Machine <span className="text-red-500">*</span></label>
+                    <select
+                      value={issueMachineId}
+                      onChange={e => setIssueMachineId(e.target.value)}
+                      required
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                    >
+                      <option value="">-- Select Machine --</option>
+                      {machines.filter(m => m.customerId === issueClientId).map(m => (
+                        <option key={m.id} value={m.id}>{m.brand} {m.model} ({m.serialNumber})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {issueFor === 'WORKSHOP' && (
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <label className="block font-bold text-gray-600 mb-1">Workshop Case <span className="text-red-500">*</span></label>
+                  <select
+                    value={issueWorkshopCaseId}
+                    onChange={e => setIssueWorkshopCaseId(e.target.value)}
+                    required
+                    className="w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="">-- Select Active Workshop Case --</option>
+                    {workshopCases.map(wk => (
+                      <option key={wk.id} value={wk.id}>
+                        {wk.caseNumber} - {wk.customerName} ({wk.brand} {wk.model} - {wk.serialNumber})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-bold text-gray-600 mb-1">Engineer / Issued To <span className="text-red-500">*</span></label>
                 <select
                   value={issueEngineerId}
                   onChange={e => setIssueEngineerId(e.target.value)}
@@ -731,9 +831,9 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
                   ))}
                 </select>
               </div>
-
+              
               <div>
-                <label className="block font-bold text-gray-600 mb-1">Select Part from Store</label>
+                <label className="block font-bold text-gray-600 mb-1">Select Part from Store <span className="text-red-500">*</span></label>
                 <select
                   value={issuePartId}
                   onChange={e => setIssuePartId(e.target.value)}
@@ -751,7 +851,7 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-600 mb-1">Quantity</label>
+                  <label className="block font-bold text-gray-600 mb-1">Quantity <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     min="1"
@@ -761,12 +861,11 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
                     className="w-full p-2.5 border border-gray-300 rounded-lg font-bold text-sm"
                   />
                 </div>
-
                 <div>
-                  <label className="block font-bold text-gray-600 mb-1">Condition</label>
+                  <label className="block font-bold text-gray-600 mb-1">Condition <span className="text-red-500">*</span></label>
                   <select
                     value={issueCondition}
-                    onChange={e => setIssueCondition(e.target.value as PartCondition)}
+                    onChange={e => setIssueCondition(e.target.value as any)}
                     className="w-full p-2.5 border border-gray-300 rounded-lg font-bold"
                   >
                     <option value="New">New</option>
@@ -780,7 +879,7 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
                 <label className="block font-bold text-gray-600 mb-1">Issuance Purpose</label>
                 <select
                   value={issuePurpose}
-                  onChange={e => setIssuePurpose(e.target.value as PartPurpose)}
+                  onChange={e => setIssuePurpose(e.target.value as any)}
                   className="w-full p-2.5 border border-gray-300 rounded-lg font-bold"
                 >
                   <option value="Engineer Bag Stock">Engineer Bag Stock (Van Stock)</option>
@@ -789,17 +888,6 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
                   <option value="Backup">Backup Unit for Customer Site</option>
                   <option value="Workshop/Other">Workshop Repair Machine</option>
                 </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-600 mb-1">Customer Name (Optional)</label>
-                <input
-                  type="text"
-                  value={issueCustomerName}
-                  onChange={e => setIssueCustomerName(e.target.value)}
-                  placeholder="e.g. National Beverage Co."
-                  className="w-full p-2.5 border border-gray-300 rounded-lg"
-                />
               </div>
 
               <div>
@@ -829,6 +917,7 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
                 </button>
               </div>
             </form>
+
           </div>
         </div>
       )}

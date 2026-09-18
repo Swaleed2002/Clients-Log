@@ -10,8 +10,10 @@ import { StoreInventory } from './components/StoreInventory';
 import { EngineerParts } from './components/EngineerParts';
 import { TestingBackupTracker } from './components/TestingBackupTracker';
 import { ClientMachines } from './components/ClientMachines';
+import { WorkshopDashboard } from './components/workshop/WorkshopDashboard';
 import { exportToExcel } from './utils';
 import { WorkEntry, ViewState, EngineerBagItem, PartMasterItem, CustomerMachine } from './types';
+import { canAccessModule } from './utils/permissions';
 import { 
   DatabaseBackup, 
   UploadCloud, 
@@ -57,6 +59,46 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // When auth changes or role is STORE, direct appropriately
+    useEffect(() => {
+    if (!profile) return;
+    
+    let allowed = true;
+    switch (currentView) {
+      case 'partsCatalog':
+      case 'storeInventory':
+        allowed = canAccessModule(profile, 'inventory');
+        break;
+      case 'engineerParts':
+        allowed = canAccessModule(profile, 'engineerBag');
+        break;
+      case 'testingBackup':
+        allowed = canAccessModule(profile, 'partsIssue');
+        break;
+      case 'clientMachines':
+        allowed = canAccessModule(profile, 'machines');
+        break;
+      case 'workshop':
+        allowed = canAccessModule(profile, 'workshop');
+        break;
+      case 'report':
+        allowed = canAccessModule(profile, 'reports');
+        break;
+      case 'admin':
+        allowed = canAccessModule(profile, 'users');
+        break;
+      case 'form':
+        allowed = canAccessModule(profile, 'workEntries');
+        break;
+      case 'serviceReportForm':
+        allowed = canAccessModule(profile, 'serviceReports');
+        break;
+    }
+    
+    if (!allowed) {
+      setCurrentView('dashboard');
+    }
+  }, [currentView, profile]);
+
   useEffect(() => {
     if (user && currentView === 'login') {
       setCurrentView('dashboard');
@@ -123,7 +165,9 @@ export default function App() {
   const NavItem = ({ view, icon: Icon, label }: any) => {
     const isActive = currentView === view;
     return (
-      <button 
+
+
+<button 
         onClick={() => setCurrentView(view)}
         className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${
           isActive ? 'text-[#E61C24]' : 'text-gray-500 hover:text-gray-900'
@@ -183,11 +227,12 @@ export default function App() {
             onOpenEngineerBag={() => setCurrentView('engineerParts')}
             onOpenTestingTracker={() => setCurrentView('testingBackup')}
             onOpenClientMachines={() => setCurrentView('clientMachines')}
+            onOpenWorkshop={() => setCurrentView('workshop')}
             profile={profile}
           />
         )}
         
-        {currentView === 'form' && (
+        {currentView === 'form' && canAccessModule(profile, 'workEntries') && (
           <WorkEntryForm 
             technicianName={profile.fullName}
             machine={entryMachine}
@@ -200,7 +245,7 @@ export default function App() {
           />
         )}
         
-        {currentView === 'partsCatalog' && (
+        {currentView === 'partsCatalog' && canAccessModule(profile, 'inventory') && (
           <div className="space-y-4">
             <div className="max-w-7xl mx-auto px-4 pt-4 flex items-center">
               <button 
@@ -235,7 +280,7 @@ export default function App() {
           </div>
         )}
 
-        {currentView === 'storeInventory' && (
+        {currentView === 'storeInventory' && canAccessModule(profile, 'inventory') && (
           <div className="space-y-4">
             <div className="max-w-7xl mx-auto px-4 pt-4 flex items-center">
               <button 
@@ -249,7 +294,7 @@ export default function App() {
           </div>
         )}
 
-        {currentView === 'engineerParts' && (
+        {currentView === 'engineerParts' && canAccessModule(profile, 'engineerBag') && (
           <div className="space-y-4">
             <div className="max-w-7xl mx-auto px-4 pt-4 flex items-center">
               <button 
@@ -271,7 +316,7 @@ export default function App() {
           </div>
         )}
 
-        {currentView === 'testingBackup' && (
+        {currentView === 'testingBackup' && canAccessModule(profile, 'partsIssue') && (
           <div className="space-y-4">
             <div className="max-w-7xl mx-auto px-4 pt-4 flex items-center">
               <button 
@@ -285,7 +330,7 @@ export default function App() {
           </div>
         )}
 
-        {currentView === 'clientMachines' && (
+        {currentView === 'clientMachines' && canAccessModule(profile, 'machines') && (
           <div className="space-y-4">
             <div className="max-w-7xl mx-auto px-4 pt-4 flex items-center">
               <button 
@@ -306,7 +351,21 @@ export default function App() {
           </div>
         )}
 
-        {currentView === 'report' && (
+        {currentView === 'workshop' && canAccessModule(profile, 'workshop') && (
+          <div className="space-y-4">
+            <div className="max-w-7xl mx-auto px-4 pt-4 flex items-center">
+              <button 
+                onClick={() => setCurrentView('dashboard')} 
+                className="flex items-center text-xs font-bold text-gray-700 bg-white border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 shadow-sm"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" /> BACK TO DASHBOARD
+              </button>
+            </div>
+            <WorkshopDashboard currentUser={profile} />
+          </div>
+        )}
+
+        {currentView === 'report' && canAccessModule(profile, 'reports') && (
           <WeeklyReport 
             entries={entries}
             onBack={() => setCurrentView('dashboard')}
@@ -316,7 +375,7 @@ export default function App() {
           />
         )}
         
-        {currentView === 'admin' && profile.role === 'ADMIN' && (
+        {currentView === 'admin' && canAccessModule(profile, 'users') && (
           <AdminPanel 
             onBack={() => setCurrentView('dashboard')}
             currentUser={profile}
@@ -331,6 +390,7 @@ export default function App() {
           <NavItem view="dashboard" icon={Home} label="HOME" />
 
           
+          {canAccessModule(profile, 'workEntries') && (
           <button 
             onClick={handleAddEntry}
             className="relative -top-4 flex flex-col items-center justify-center"
@@ -341,8 +401,9 @@ export default function App() {
             </div>
             <span className="text-[9px] font-black text-gray-700 mt-0.5 tracking-wider uppercase">LOG</span>
           </button>
+          )}
           
-          <NavItem view="partsCatalog" icon={Package} label="PARTS" />
+          {canAccessModule(profile, 'inventory') && <NavItem view="partsCatalog" icon={Package} label="PARTS" />}
           
           <button 
             onClick={() => setShowSettings(!showSettings)}
@@ -373,61 +434,66 @@ export default function App() {
             
             <div className="p-2 space-y-1 text-xs">
               {/* Module Shortcuts */}
+              {canAccessModule(profile, 'inventory') && (
               <button 
                 onClick={() => { setShowSettings(false); setCurrentView('partsCatalog'); }}
                 className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
               >
                 <Package className="w-4 h-4 mr-2.5 text-blue-600" /> Parts Master Catalog
               </button>
-
+              )}
+              {canAccessModule(profile, 'engineerBag') && (
               <button 
                 onClick={() => { setShowSettings(false); setCurrentView('engineerParts'); }}
                 className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
               >
                 <Briefcase className="w-4 h-4 mr-2.5 text-emerald-600" /> Engineer Bag Stock
               </button>
-
-              {(profile.role === 'STORE' || profile.role === 'ADMIN') && (
-                <button 
-                  onClick={() => { setShowSettings(false); setCurrentView('storeInventory'); }}
-                  className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
-                >
-                  <Warehouse className="w-4 h-4 mr-2.5 text-purple-600" /> Store Room Inventory
-                </button>
               )}
-
+              {canAccessModule(profile, 'inventory') && (
+              <button 
+                onClick={() => { setShowSettings(false); setCurrentView('storeInventory'); }}
+                className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
+              >
+                <Warehouse className="w-4 h-4 mr-2.5 text-purple-600" /> Store Room Inventory
+              </button>
+              )}
+              {canAccessModule(profile, 'partsIssue') && (
               <button 
                 onClick={() => { setShowSettings(false); setCurrentView('testingBackup'); }}
                 className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
               >
                 <Activity className="w-4 h-4 mr-2.5 text-amber-600" /> Testing & Backup Tracker
               </button>
-
+              )}
+              {canAccessModule(profile, 'machines') && (
               <button 
                 onClick={() => { setShowSettings(false); setCurrentView('clientMachines'); }}
                 className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
               >
                 <Printer className="w-4 h-4 mr-2.5 text-emerald-600" /> Equipment Registry & History
               </button>
-
+              )}
+              {canAccessModule(profile, 'reports') && (
               <button 
                 onClick={() => { setShowSettings(false); setCurrentView('report'); }}
                 className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
               >
                 <FileSpreadsheet className="w-4 h-4 mr-2.5 text-blue-500" /> Weekly Timesheets
               </button>
-
-              <div className="h-px bg-gray-100 my-1.5"></div>
-
-              {profile.role === 'ADMIN' && (
-                <button 
-                  onClick={() => { setShowSettings(false); setCurrentView('admin'); }}
-                  className="w-full flex items-center p-2.5 font-bold text-purple-700 hover:bg-purple-50 rounded-xl"
-                >
-                  <ShieldCheck className="w-4 h-4 mr-2.5 text-purple-600" /> Admin User Management
-                </button>
               )}
-
+              
+              <div className="h-px bg-gray-100 my-1.5"></div>
+              
+              {canAccessModule(profile, 'users') && (
+              <button 
+                onClick={() => { setShowSettings(false); setCurrentView('admin'); }}
+                className="w-full flex items-center p-2.5 font-bold text-purple-700 hover:bg-purple-50 rounded-xl"
+              >
+                <ShieldCheck className="w-4 h-4 mr-2.5 text-purple-600" /> Admin User Management
+              </button>
+              )}
+              
               <button 
                 onClick={backupData}
                 className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"

@@ -1,66 +1,38 @@
 const fs = require('fs');
-let content = fs.readFileSync('src/App.tsx', 'utf-8');
+const p = './src/App.tsx';
+let c = fs.readFileSync(p, 'utf8');
 
-// Imports
-const searchImport = "import { AdminPanel } from './components/AdminPanel';";
-const replacementImport = "import { AdminPanel } from './components/AdminPanel';\nimport { ServiceReportsList } from './components/ServiceReportsList';\nimport { ServiceReportForm } from './components/ServiceReportForm';";
-if (!content.includes('ServiceReportsList')) {
-  content = content.replace(searchImport, replacementImport);
-}
+c = c.replace(/import \{.*?\} from '\.\/types';/, (m) => {
+  return m + "\nimport { canAccessModule } from './utils/permissions';";
+});
 
-// State for active ServiceReport
-const searchState = "const [editingEntry, setEditingEntry] = useState<WorkEntry | undefined>();";
-const replacementState = "const [editingEntry, setEditingEntry] = useState<WorkEntry | undefined>();\n  const [activeServiceReport, setActiveServiceReport] = useState<any>(undefined);";
-if (!content.includes('activeServiceReport')) {
-  content = content.replace(searchState, replacementState);
-}
+c = c.replace(/\{\/\* Module Shortcuts \*\/\}\s*<button[\s\S]*?>[\s\S]*?Parts Master Catalog[\s\S]*?<\/button>/, (m) => {
+  return `{canAccessModule(profile, 'inventory') && (\n${m}\n              )}`;
+});
 
-// Rendering components
-const searchRender = "{currentView === 'report' && (";
-const replacementRender = `{currentView === 'serviceReportsList' && (
-          <ServiceReportsList 
-            currentUser={profile}
-            onBack={() => setCurrentView('dashboard')}
-            onNew={() => {
-              setActiveServiceReport(undefined);
-              setCurrentView('serviceReportForm');
-            }}
-            onEdit={(report) => {
-              setActiveServiceReport(report);
-              setCurrentView('serviceReportForm');
-            }}
-          />
-        )}
+c = c.replace(/<button[\s\S]*?>[\s\S]*?Engineer Bag Stock[\s\S]*?<\/button>/, (m) => {
+  return `{canAccessModule(profile, 'engineerBag') && (\n${m}\n              )}`;
+});
 
-        {currentView === 'serviceReportForm' && (
-          <ServiceReportForm 
-            initialData={activeServiceReport}
-            currentUser={profile}
-            onBack={() => setCurrentView('serviceReportsList')}
-            onSaved={() => setCurrentView('serviceReportsList')}
-          />
-        )}
+c = c.replace(/\{\(profile\.role === 'STORE' \|\| profile\.role === 'ADMIN'\) && \(\s*<button[\s\S]*?>[\s\S]*?Store Room Inventory[\s\S]*?<\/button>\s*\)\}/, (m) => {
+  return `{canAccessModule(profile, 'inventory') && (\n              <button \n                onClick={() => { setShowSettings(false); setCurrentView('storeInventory'); }}\n                className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"\n              >\n                <Warehouse className="w-4 h-4 mr-2.5 text-purple-600" /> Store Room Inventory\n              </button>\n              )}`;
+});
 
-        {currentView === 'report' && (`;
-if (!content.includes("currentView === 'serviceReportsList'")) {
-  content = content.replace(searchRender, replacementRender);
-}
+c = c.replace(/<button[\s\S]*?>[\s\S]*?Testing & Backup Tracker[\s\S]*?<\/button>/, (m) => {
+  return `{canAccessModule(profile, 'partsIssue') && (\n${m}\n              )}`;
+});
 
-// Add navigation button to settings menu or a new icon in bottom bar. Let's add it to bottom bar.
-// Look for <NavItem view="report" icon={FileSpreadsheet} label="REPORT" />
-const searchNavItem = "<NavItem view=\"report\" icon={FileSpreadsheet} label=\"REPORT\" />";
-// I need FileText from lucide-react. Let's check imports.
-const searchLucide = "DatabaseBackup, UploadCloud, LogOut, ShieldCheck, Home, PlusCircle, FileSpreadsheet, Settings } from 'lucide-react';";
-const replacementLucide = "DatabaseBackup, UploadCloud, LogOut, ShieldCheck, Home, PlusCircle, FileSpreadsheet, Settings, FileText } from 'lucide-react';";
-if (content.includes(searchLucide) && !content.includes('FileText }')) {
-  content = content.replace(searchLucide, replacementLucide);
-}
+c = c.replace(/<button[\s\S]*?>[\s\S]*?Equipment Registry & History[\s\S]*?<\/button>/, (m) => {
+  return `{canAccessModule(profile, 'machines') && (\n${m}\n              )}`;
+});
 
-const replacementNavItem = `<NavItem view="report" icon={FileSpreadsheet} label="REPORT" />
-          <NavItem view="serviceReportsList" icon={FileText} label="SRV RPT" />`;
-if (!content.includes('serviceReportsList" icon={FileText}')) {
-  content = content.replace(searchNavItem, replacementNavItem);
-}
+c = c.replace(/<button[\s\S]*?>[\s\S]*?Weekly Timesheets[\s\S]*?<\/button>/, (m) => {
+  return `{canAccessModule(profile, 'reports') && (\n${m}\n              )}`;
+});
 
-fs.writeFileSync('src/App.tsx', content);
-console.log("Patched App.tsx successfully");
+c = c.replace(/\{profile\.role === 'ADMIN' && \(\s*<button[\s\S]*?>[\s\S]*?Admin User Management[\s\S]*?<\/button>\s*\)\}/, (m) => {
+  return `{canAccessModule(profile, 'users') && (\n              <button \n                onClick={() => { setShowSettings(false); setCurrentView('admin'); }}\n                className="w-full flex items-center p-2.5 font-bold text-purple-700 hover:bg-purple-50 rounded-xl"\n              >\n                <ShieldCheck className="w-4 h-4 mr-2.5 text-purple-600" /> Admin User Management\n              </button>\n              )}`;
+});
+
+
+fs.writeFileSync(p, c);

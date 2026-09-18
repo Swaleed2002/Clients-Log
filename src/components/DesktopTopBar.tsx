@@ -1,5 +1,6 @@
 import React from 'react';
 import { ViewState, UserProfile } from '../types';
+import { canAccessModule } from '../utils/permissions';
 import { 
   Home, 
   Printer, 
@@ -14,7 +15,9 @@ import {
   Plus,
   Sparkles,
   Search,
-  Bell
+  Bell,
+  Settings,
+  Wrench
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -35,6 +38,11 @@ const VIEW_TITLES: Record<ViewState, { title: string; subtitle: string; icon: an
     title: 'Equipment & Clients CRM',
     subtitle: 'Installed printer fleet, mandatory consumables & maintenance records',
     icon: Printer
+  },
+  workshop: {
+    title: 'Workshop Machines',
+    subtitle: 'Manage machine repairs, workshop inventory & dispatch verification',
+    icon: Wrench
   },
   serviceReportsList: {
     title: 'Service Reports & Work Orders',
@@ -135,7 +143,7 @@ export function DesktopTopBar({
         </div>
 
         {/* Quick Log Button if not on form */}
-        {currentView !== 'form' && currentView !== 'serviceReportForm' && (
+        {currentView !== 'form' && currentView !== 'serviceReportForm' && canAccessModule(profile, 'workEntries') && (
           <button
             onClick={onAddEntry}
             className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#E61C24] hover:bg-red-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all"

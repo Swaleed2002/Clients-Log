@@ -36,20 +36,32 @@ export function formatDuration(duration: TimeDuration): string {
 }
 
 export function calculateEntryTotals(entry: any) {
-  // Safe fallback for old entries during transition
-  const tStart = entry.travelStart || entry.travelToStart || '';
-  const tStop = entry.travelStop || entry.travelToEnd || '';
+  let totalTravelMins = 0;
+  if (entry.travelSegments && Array.isArray(entry.travelSegments) && entry.travelSegments.length > 0) {
+    totalTravelMins = entry.travelSegments.reduce((sum, seg) => sum + (seg.durationMinutes || 0), 0);
+  } else {
+    const tStart = entry.travelStart || entry.travelToStart || '';
+    const tStop = entry.travelStop || entry.travelToEnd || '';
+    totalTravelMins = calculateDuration(tStart, tStop).totalMinutes;
+  }
+  
   const jStart = entry.jobStart || '';
   const jStop = entry.jobStop || entry.jobEnd || '';
-
-  const travel = calculateDuration(tStart, tStop);
   const job = calculateDuration(jStart, jStop);
   
+  const travel = {
+    hours: Math.floor(totalTravelMins / 60),
+    minutes: totalTravelMins % 60,
+    totalMinutes: totalTravelMins
+  };
+  
+  const lunch = calculateDuration(entry.lunchStart || '', entry.lunchEnd || '');
   const totalWorkAndTravelMinutes = travel.totalMinutes + job.totalMinutes;
   
   return {
     travel,
     job,
+    lunch,
     totalWorkAndTravelMinutes
   };
 }
@@ -99,12 +111,14 @@ export function exportToExcel(
     "Date", "Customer", "Location", 
     "Travel Time", "", 
     "Job Time", "", 
+    "Lunch Time", "", 
     "Job Carried Out", "Checked By"
   ]);
   
   // Sub Headers
   aoa.push([
     "", "", "", 
+    "From", "To", 
     "From", "To", 
     "From", "To", 
     "", ""
@@ -120,11 +134,22 @@ export function exportToExcel(
     const customer = isWorkshop ? "Workshop Jobs" : entry.customerName;
     const location = isWorkshop ? "Workshop" : entry.location;
     
-    const travelFrom = isWorkshop ? "" : (entry.travelStart || (entry as any).travelToStart || "-");
-    const travelTo = isWorkshop ? "" : (entry.travelStop || (entry as any).travelToEnd || "-");
+    let travelFrom = "-";
+    let travelTo = "-";
+    if (!isWorkshop) {
+      if ((entry as any).travelSegments && (entry as any).travelSegments.length > 0) {
+        travelFrom = (entry as any).travelSegments.map((s: any) => s.start).join(", ");
+        travelTo = (entry as any).travelSegments.map((s: any) => s.end).join(", ");
+      } else {
+        travelFrom = entry.travelStart || (entry as any).travelToStart || "-";
+        travelTo = entry.travelStop || (entry as any).travelToEnd || "-";
+      }
+    }
     
     const jobFrom = entry.jobStart || "-";
     const jobTo = entry.jobStop || (entry as any).jobEnd || "-";
+    const lunchFrom = entry.lunchStart || "-";
+    const lunchTo = entry.lunchEnd || "-";
     
     let jobCarriedOut = entry.jobCategory || "";
     if (isDelivery) {
@@ -149,6 +174,8 @@ export function exportToExcel(
       travelTo,
       jobFrom,
       jobTo,
+      lunchFrom,
+      lunchTo,
       jobCarriedOut,
       "" // Checked By
     ]);
@@ -224,13 +251,15 @@ export function exportToExcel(
     { s: { r: 6, c: 3 }, e: { r: 6, c: 4 } },
     // Job Time
     { s: { r: 6, c: 5 }, e: { r: 6, c: 6 } },
-    // Center WEEKLY REPORT across all 9 columns
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+    // Lunch Time
+    { s: { r: 6, c: 7 }, e: { r: 6, c: 8 } },
+    // Center WEEKLY REPORT across all 11 columns
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
     // Name and ID merges for clean layout
     { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } }, // Name
-    { s: { r: 2, c: 5 }, e: { r: 2, c: 8 } }, // ID
+    { s: { r: 2, c: 7 }, e: { r: 2, c: 10 } }, // ID
     // Period merge
-    { s: { r: 4, c: 0 }, e: { r: 4, c: 8 } },
+    { s: { r: 4, c: 0 }, e: { r: 4, c: 10 } },
   ];
   
   // Column Widths
@@ -238,8 +267,8 @@ export function exportToExcel(
     { wch: 12 }, // A: Date
     { wch: 25 }, // B: Customer
     { wch: 20 }, // C: Location
-    { wch: 10 }, // D: Travel From
-    { wch: 10 }, // E: Travel To
+    { wch: 20 }, // D: Travel From
+    { wch: 20 }, // E: Travel To
     { wch: 10 }, // F: Job From
     { wch: 10 }, // G: Job To
     { wch: 45 }, // H: Job Carried Out
@@ -282,4 +311,8 @@ export function exportToExcel(
 
   const filename = `Weekly_Report_${engineerName.replace(/[^a-zA-Z0-9]/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
   XLSX.writeFile(wb, filename);
+}
+
+export function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }

@@ -40,13 +40,32 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
   const [customerName, setCustomerName] = useState(initialData?.customerName || machine?.customerName || '');
   const [location, setLocation] = useState(initialData?.location || machine?.location || '');
   
-  const [travelStart, setTravelStart] = useState(initialData?.travelStart || (initialData as any)?.travelToStart || '');
-  const [travelStop, setTravelStop] = useState(initialData?.travelStop || (initialData as any)?.travelToEnd || '');
+  const [travelSegments, setTravelSegments] = useState<{start: string; end: string; durationMinutes: number}[]>(() => {
+    if (initialData?.travelSegments) return initialData.travelSegments;
+    const oldStart = initialData?.travelStart || (initialData as any)?.travelToStart || '';
+    const oldStop = initialData?.travelStop || (initialData as any)?.travelToEnd || '';
+    if (oldStart && oldStop) {
+      return [{ start: oldStart, end: oldStop, durationMinutes: calculateDuration(oldStart, oldStop) }];
+    }
+    return [];
+  });
+  const [currentTravelStart, setCurrentTravelStart] = useState(() => {
+    if (!initialData?.travelSegments) {
+       const oldStart = initialData?.travelStart || (initialData as any)?.travelToStart || '';
+       const oldStop = initialData?.travelStop || (initialData as any)?.travelToEnd || '';
+       if (oldStart && !oldStop) return oldStart;
+    }
+    return '';
+  });
   const [isEditingTravel, setIsEditingTravel] = useState(false);
   
   const [jobStart, setJobStart] = useState(initialData?.jobStart || '');
   const [jobStop, setJobStop] = useState(initialData?.jobStop || (initialData as any)?.jobEnd || '');
   const [isEditingJob, setIsEditingJob] = useState(false);
+
+  const [lunchStart, setLunchStart] = useState(initialData?.lunchStart || '');
+  const [lunchEnd, setLunchEnd] = useState(initialData?.lunchEnd || '');
+  const [isEditingLunch, setIsEditingLunch] = useState(false);
   
   const [jobCategory, setJobCategory] = useState(initialData?.jobCategory || '');
   const [remarks, setRemarks] = useState(initialData?.remarks || '');
@@ -77,8 +96,8 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
     if (workType === 'Workshop') {
       setCustomerName('Workshop');
       setLocation('Workshop');
-      setTravelStart('');
-      setTravelStop('');
+      setTravelSegments([]);
+      setCurrentTravelStart('');
     } else if (workType === 'Office') {
       setCustomerName('Office');
       setLocation('Office');
@@ -92,8 +111,12 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
 
   const handleSave = async () => {
     if (busy || showSavedMsg) return;
-    if (!date || !workType || !jobCategory) {
-      alert('Please fill Date, Work Type, and Job Category');
+    if (!date || !workType) {
+      alert('Please fill Date and Work Type');
+      return;
+    }
+    if (jobStart && !jobCategory) {
+      alert('Please fill Job Category as a job was started');
       return;
     }
     if ((workType === 'Customer' || workType === 'Other' || workType === 'Delivery') && (!customerName || !location)) {
@@ -119,10 +142,14 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
       ...(workType === 'Delivery' ? { deliveryType: deliveryType as any } : {}),
       customerName,
       location,
-      travelStart,
-      travelStop,
+      travelStart: travelSegments.length > 0 ? travelSegments[0].start : '',
+      travelStop: travelSegments.length > 0 ? travelSegments[travelSegments.length - 1].end : '',
+      travelSegments,
       jobStart,
       jobStop,
+      lunchStart: lunchStart || null,
+      lunchEnd: lunchEnd || null,
+      lunchDurationMinutes: calculateDuration(lunchStart, lunchEnd).totalMinutes,
       jobCategory,
       remarks
     });
@@ -143,8 +170,17 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
     }
   };
 
-  const travelDur = calculateDuration(travelStart, travelStop);
+  const travelDur = calculateDuration(travelSegments.length > 0 ? travelSegments[0].start : '', travelSegments.length > 0 ? travelSegments[travelSegments.length - 1].end : '');
   const jobDur = calculateDuration(jobStart, jobStop);
+  
+  const isTravelRunning = !!currentTravelStart;
+  const isJobRunning = !!(jobStart && !jobStop);
+  const isLunchRunning = !!(lunchStart && !lunchEnd);
+
+  const canStartTravel = !isJobRunning && !isLunchRunning;
+  const canStartJob = !isTravelRunning && !isLunchRunning;
+  const canStartLunch = !isTravelRunning && !isJobRunning;
+
 
   return (
     <div className="max-w-3xl mx-auto bg-gray-50 min-h-screen pb-24">
@@ -242,62 +278,71 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
               <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center">
                 <Clock className="w-4 h-4 mr-2 text-red-600" /> Travel
               </h3>
-              {travelStart && travelStop && (
+              {travelSegments.length > 0 && (
                  <button onClick={() => setIsEditingTravel(!isEditingTravel)} className="text-gray-400 hover:text-red-600 p-1">
                    <Pencil className="w-4 h-4" />
                  </button>
               )}
             </div>
 
-            {!travelStart ? (
+            {!isTravelRunning ? (
               <button 
-                onClick={() => setTravelStart(getCurrentTimeHHmm())}
-                className="w-full py-4 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-2 border-emerald-300 rounded-xl font-bold text-lg flex items-center justify-center transition-colors"
+                onClick={() => setCurrentTravelStart(getCurrentTimeHHmm())}
+                disabled={!canStartTravel}
+                className={cn(
+                  "w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center transition-colors border-2",
+                  canStartTravel 
+                    ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300"
+                    : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                )}
               >
                 <PlayCircle className="w-6 h-6 mr-2" /> START TRAVEL
               </button>
-            ) : !travelStop ? (
+            ) : (
               <div className="space-y-4">
                 <div className="flex items-center justify-center gap-2 text-red-700 bg-red-50 py-2 rounded-lg">
                   <span className="relative flex h-3 w-3">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                   </span>
-                  <span className="font-semibold text-sm">TRAVEL IN PROGRESS (Started {travelStart})</span>
+                  <span className="font-semibold text-sm">TRAVEL IN PROGRESS (Started {currentTravelStart})</span>
                 </div>
                 <button 
-                  onClick={() => setTravelStop(getCurrentTimeHHmm())}
+                  onClick={() => {
+                    const stop = getCurrentTimeHHmm();
+                    setTravelSegments(prev => [...prev, { start: currentTravelStart, end: stop, durationMinutes: calculateDuration(currentTravelStart, stop) }]);
+                    setCurrentTravelStart('');
+                  }}
                   className="w-full py-4 bg-red-100 text-red-800 hover:bg-red-200 border-2 border-red-300 rounded-xl font-bold text-lg flex items-center justify-center transition-colors"
                 >
                   <StopCircle className="w-6 h-6 mr-2" /> STOP TRAVEL
                 </button>
               </div>
-            ) : (
-              <div className="bg-gray-50 p-4 rounded-xl text-center">
-                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                <p className="font-bold text-gray-800">TRAVEL COMPLETED</p>
-                <p className="text-sm text-gray-500 mt-1">{travelStart} &rarr; {travelStop}</p>
-                <p className="font-bold text-red-600 mt-1">Duration: {formatDuration(travelDur)}</p>
-              </div>
             )}
 
-            {isEditingTravel && (
-              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Start Time</label>
-                  <input type="time" value={travelStart} onChange={e => setTravelStart(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">End Time</label>
-                  <input type="time" value={travelStop} onChange={e => setTravelStop(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
+            {travelSegments.length > 0 && (
+              <div className="space-y-2 mt-4">
+                <p className="font-bold text-gray-800 text-center text-sm border-t border-gray-100 pt-4">COMPLETED TRAVEL SEGMENTS</p>
+                {travelSegments.map((seg, idx) => (
+                  <div key={idx} className="bg-gray-50 p-3 rounded-lg text-center flex flex-col justify-center items-center relative">
+                    <p className="text-sm text-gray-500">{seg.start} &rarr; {seg.end}</p>
+                    <p className="font-bold text-emerald-600 mt-1">Duration: {formatDuration(seg.durationMinutes)}</p>
+                    {isEditingTravel && (
+                        <button onClick={() => {
+                           const newSegments = [...travelSegments];
+                           newSegments.splice(idx, 1);
+                           setTravelSegments(newSegments);
+                        }} className="absolute right-4 text-red-500 hover:text-red-700 text-xs font-bold uppercase tracking-wider">Delete</button>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </section>
         )}
 
         {/* Job Section */}
-        <section className={cn("bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4 transition-opacity", (workType !== 'Workshop' && !travelStop) ? "opacity-50 pointer-events-none" : "opacity-100")}>
+        <section className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-gray-100 pb-2">
             <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center">
               <Briefcase className="w-4 h-4 mr-2 text-purple-600" /> Job
@@ -358,6 +403,71 @@ export function WorkEntryForm({ initialData, onSave, onCancel, uniqueCustomers, 
         <WorkOrderFields machines={machines} machineId={machineId} onMachine={m => { setMachineId(m?.id || ''); if (m) { setCustomerName(m.customerName); setLocation(m.location || location); } }} complaint={complaint} setComplaint={setComplaint} parts={partsUsed} setParts={setPartsUsed} image={workOrderImage} onImage={async file => { setBusy(true); setError(''); try { setWorkOrderImage(await readWorkOrderImage(file)); } catch (err) { setError(String(err)); } finally { setBusy(false); } }} removeImage={() => setWorkOrderImage('')} busy={busy} technician={initialData?.technicianName || technicianName} />
         {machineLoadError && <p role="alert" className="text-red-700">{machineLoadError}</p>}
         {error && <p role="alert" className="text-red-700">{error}</p>}
+        
+
+        {/* Lunch Break Section */}
+        <section className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center">
+              <Clock className="w-4 h-4 mr-2 text-orange-600" /> Lunch Break
+            </h3>
+            {lunchStart && lunchEnd && (
+               <button onClick={() => setIsEditingLunch(!isEditingLunch)} className="text-gray-400 hover:text-orange-600 p-1">
+                 <Pencil className="w-4 h-4" />
+               </button>
+            )}
+          </div>
+
+          {!lunchStart ? (
+            <button 
+              onClick={() => setLunchStart(getCurrentTimeHHmm())}
+              disabled={!canStartLunch}
+              className={cn("w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center transition-colors border-2",
+                  canStartLunch ? "bg-orange-100 text-orange-800 hover:bg-orange-200 border-orange-300" : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+              )}
+            >
+              <PlayCircle className="w-6 h-6 mr-2" /> START LUNCH BREAK
+            </button>
+          ) : !lunchEnd ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2 text-orange-700 bg-orange-50 py-2 rounded-lg">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
+                </span>
+                <span className="font-semibold text-sm">LUNCH BREAK (Started {lunchStart})</span>
+              </div>
+              <button 
+                onClick={() => setLunchEnd(getCurrentTimeHHmm())}
+                className="w-full py-4 bg-red-100 text-red-800 hover:bg-red-200 border-2 border-red-300 rounded-xl font-bold text-lg flex items-center justify-center transition-colors"
+              >
+                <StopCircle className="w-6 h-6 mr-2" /> STOP LUNCH BREAK
+              </button>
+            </div>
+          ) : (
+            <div className="bg-gray-50 p-4 rounded-xl text-center">
+              <CheckCircle2 className="w-8 h-8 text-orange-500 mx-auto mb-2" />
+              <p className="font-bold text-gray-800">LUNCH BREAK COMPLETED</p>
+              <p className="text-sm text-gray-500 mt-1">{lunchStart} &rarr; {lunchEnd}</p>
+              <p className="font-bold text-orange-600 mt-1">Duration: {formatDuration(calculateDuration(lunchStart, lunchEnd))}</p>
+            </div>
+          )}
+
+          {isEditingLunch && (
+            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Start Time</label>
+                <input type="time" value={lunchStart} onChange={e => setLunchStart(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">End Time</label>
+                <input type="time" value={lunchEnd} onChange={e => setLunchEnd(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+            </div>
+          )}
+        </section>
+
+
         {/* Work Details Section */}
         <section className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
           <div>

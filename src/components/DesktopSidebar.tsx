@@ -1,5 +1,6 @@
 import reliableLogo from '../assets/reliable-app-icon.png';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { canAccessModule } from '../utils/permissions';
 import { 
   Home, 
   Printer, 
@@ -20,7 +21,8 @@ import {
   RefreshCw,
   Clock,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Wrench
 } from 'lucide-react';
 import { ViewState, UserProfile } from '../types';
 import { offlineDb } from '../db/indexedDb';
@@ -143,7 +145,8 @@ export function DesktopSidebar({
           </div>
         </div>
 
-        {/* Quick Action Button for Desktop */}
+        {canAccessModule(profile, 'workEntries') && (
+<> {/* Quick Action Button for Desktop */}
         <div className="mt-4 pt-3 border-t border-slate-800/60">
           <button
             onClick={onAddEntry}
@@ -153,6 +156,8 @@ export function DesktopSidebar({
             <span>LOG WORK ENTRY</span>
           </button>
         </div>
+        </>
+        )}
       </div>
 
       {/* Navigation Sections */}
@@ -164,7 +169,8 @@ export function DesktopSidebar({
             Field Operations
           </p>
           <NavItem view="dashboard" icon={Home} label="Dashboard" />
-          <NavItem view="form" icon={Clock} label="Daily Work Log" />
+          {canAccessModule(profile, 'workEntries') && <NavItem view="form" icon={Clock} label="Daily Work Log" />}
+          {canAccessModule(profile, 'workshop') && <NavItem view="workshop" icon={Wrench} label="Workshop Machines" />}
         </div>
 
         {/* Clients & Machines CRM */}
@@ -172,14 +178,16 @@ export function DesktopSidebar({
           <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
             Assets & CRM
           </p>
+          {canAccessModule(profile, 'machines') && (
           <NavItem 
-            view="clientMachines" 
-            icon={Printer} 
-            label="Equipment & Clients" 
-            badge="CRM"
+             view="clientMachines" 
+             icon={Printer} 
+             label="Equipment & Clients" 
+             badge="CRM"
             badgeColor="bg-emerald-950 text-emerald-300 border border-emerald-800/50"
           />
-          <NavItem view="testingBackup" icon={Activity} label="Testing & Backup Parts" />
+          )}
+          {canAccessModule(profile, 'partsIssue') && <NavItem view="testingBackup" icon={Activity} label="Testing & Backup Parts" />}
         </div>
 
         {/* Inventory & Parts */}
@@ -187,14 +195,14 @@ export function DesktopSidebar({
           <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
             Parts & Warehousing
           </p>
-          <NavItem view="partsCatalog" icon={Package} label="Parts Master Catalog" />
+          {canAccessModule(profile, 'inventory') && <NavItem view="partsCatalog" icon={Package} label="Parts Master Catalog" />}
           <NavItem view="engineerParts" icon={Briefcase} label="My Bag Stock" />
-          {(isStore || isAdmin) && (
+          {canAccessModule(profile, 'inventory') && (
             <NavItem 
-              view="storeInventory" 
-              icon={Warehouse} 
-              label="Store Inventory" 
-              badge="STORE"
+               view="storeInventory" 
+               icon={Warehouse} 
+               label="Store Inventory" 
+               badge="STORE"
               badgeColor="bg-purple-950 text-purple-300 border border-purple-800/50"
             />
           )}
@@ -205,13 +213,13 @@ export function DesktopSidebar({
           <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
             Reports & Admin
           </p>
-          <NavItem view="report" icon={FileSpreadsheet} label="Weekly Report" />
-          {isAdmin && (
+          {canAccessModule(profile, 'reports') && <NavItem view="report" icon={FileSpreadsheet} label="Weekly Report" />}
+          {canAccessModule(profile, 'users') && (
             <NavItem 
-              view="admin" 
-              icon={ShieldCheck} 
-              label="Admin User Control" 
-              badge="ADMIN"
+               view="admin" 
+               icon={ShieldCheck} 
+               label="Admin User Control" 
+               badge="ADMIN"
               badgeColor="bg-red-950 text-red-300 border border-red-800/50"
             />
           )}

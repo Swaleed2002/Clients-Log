@@ -35,11 +35,13 @@ export function WeeklyReport({ entries, onBack, onEdit, onDelete, onExport }: We
 
   let totalJobMinutes = 0;
   let totalTravelMinutes = 0;
+  let totalLunchMinutes = 0;
 
   weekEntries.forEach(entry => {
     const totals = calculateEntryTotals(entry);
     totalJobMinutes += totals.job.totalMinutes;
     totalTravelMinutes += totals.travel.totalMinutes;
+    if ((totals as any).lunch) totalLunchMinutes += (totals as any).lunch.totalMinutes;
   });
 
   const handlePrevWeek = () => setCurrentDate(subWeeks(currentDate, 1));
@@ -113,6 +115,10 @@ export function WeeklyReport({ entries, onBack, onEdit, onDelete, onExport }: We
           <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
             <p className="text-xs text-gray-500 font-semibold uppercase mb-1">Travel Time</p>
             <p className="text-xl font-bold text-gray-900">{formatDuration({ hours: Math.floor(totalTravelMinutes/60), minutes: totalTravelMinutes%60, totalMinutes: totalTravelMinutes})}</p>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+            <p className="text-xs text-orange-500 font-semibold uppercase mb-1">Lunch Break</p>
+            <p className="text-xl font-bold text-orange-700">{formatDuration({ hours: Math.floor(totalLunchMinutes/60), minutes: totalLunchMinutes%60, totalMinutes: totalLunchMinutes})}</p>
           </div>
           <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center bg-red-50">
             <p className="text-xs text-[#E61C24] font-semibold uppercase mb-1">Total Time</p>

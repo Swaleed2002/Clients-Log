@@ -2,7 +2,47 @@ export type WorkType = 'Customer' | 'Workshop' | 'Office' | 'Delivery' | 'Other'
 export type UserRole = 'ADMIN' | 'STORE' | 'ENGINEER';
 export type UserStatus = 'Active' | 'Disabled';
 
+
+export interface ModulePermissions {
+  access: boolean;
+  view: boolean;
+  add?: boolean;
+  edit?: boolean;
+  delete?: boolean;
+  
+  issuePart?: boolean;
+  cancelIssue?: boolean;
+  
+  createIn?: boolean;
+  addActivity?: boolean;
+  markReady?: boolean;
+  prepareOut?: boolean;
+  approveIn?: boolean;
+  approveOut?: boolean;
+  
+  createUser?: boolean;
+  resetPassword?: boolean;
+  disableUser?: boolean;
+  deleteUser?: boolean;
+  manageRights?: boolean;
+  export?: boolean;
+}
+
+export interface UserPermissions {
+  clients: ModulePermissions;
+  machines: ModulePermissions;
+  inventory: ModulePermissions;
+  partsIssue: ModulePermissions;
+  engineerBag: ModulePermissions;
+  workshop: ModulePermissions;
+  serviceReports: ModulePermissions;
+  workEntries: ModulePermissions;
+  users: ModulePermissions;
+  reports: ModulePermissions;
+}
+
 export interface UserProfile {
+  permissions?: UserPermissions;
   uid?: string; // Firebase Auth UID (Document ID)
   userId: string;
   fullName: string;
@@ -37,9 +77,14 @@ export interface WorkEntry {
   
   travelStart: string; // HH:mm
   travelStop: string;
+  travelSegments?: { start: string; end: string; durationMinutes: number }[];
   
   jobStart: string;
   jobStop: string;
+  
+  lunchStart?: string | null;
+  lunchEnd?: string | null;
+  lunchDurationMinutes?: number | null;
   
   jobCategory: string;
   remarks: string;
@@ -61,7 +106,8 @@ export type ViewState =
   | 'storeInventory'
   | 'engineerParts'
   | 'testingBackup'
-  | 'clientMachines';
+  | 'clientMachines'
+  | 'workshop';
 
 export type PrinterBrand = 'LINX' | 'UBS' | 'RYNAN';
 
@@ -334,6 +380,8 @@ export interface Client {
   telFax?: string;
   email?: string;
   contactPerson?: string;
+  industryCategory?: string;
+  status?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -399,3 +447,102 @@ export function validateMachineData(data: {
   };
 }
 
+
+// ==========================================
+// WORKSHOP MODULE TYPES
+// ==========================================
+
+export type WorkshopStatus = 
+  | 'Awaiting Store Verification' 
+  | 'In Workshop' 
+  | 'Repair In Progress' 
+  | 'Ready for Dispatch' 
+  | 'Awaiting Out Verification' 
+  | 'Returned to Customer';
+
+export type ChecklistCondition = 'OK / Present' | 'Missing' | 'Damaged / Faulty' | 'N/A';
+
+export interface WorkshopChecklistItem {
+  id: string;
+  name: string;
+  condition: ChecklistCondition;
+  engineerNote?: string;
+  storeVerifiedCondition?: ChecklistCondition;
+  storeNote?: string;
+  outgoingCondition?: ChecklistCondition;
+}
+
+export interface WorkshopActivity {
+  id: string;
+  uid: string;
+  engineerId: string;
+  engineerName: string;
+  date: string;
+  timestamp: number;
+  workPerformed: string;
+  diagnosis?: string;
+  partsUsed: ServiceReportPartUsed[];
+  notes?: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  uid: string;
+  userName: string;
+  action: string;
+  details: string;
+  timestamp: number;
+}
+
+export interface WorkshopCase {
+  id: string;
+  caseNumber: string;
+  machineId: string;
+  customerId: string;
+  customerName: string;
+  brand: PrinterBrand;
+  model: string;
+  serialNumber: string;
+  printHeadSerial?: string;
+  status: WorkshopStatus;
+  complaint: string;
+  
+  // IN
+  receivedByUid: string;
+  receivedByName: string;
+  receivedAt: number;
+  engineerRemarks?: string;
+  incomingChecklist: WorkshopChecklistItem[];
+  
+  storeInApprovedBy?: string;
+  storeInApprovedByName?: string;
+  storeInApprovedAt?: number;
+  storeInRemarks?: string;
+  
+  // ACTIVITY
+  activities: WorkshopActivity[];
+  
+  // OUT
+  readyForDispatchAt?: number;
+  outgoingChecklist: WorkshopChecklistItem[];
+  
+  takenByUid?: string;
+  takenByName?: string;
+  dispatchRemarks?: string;
+  finalResult?: string;
+  
+  storeOutApprovedBy?: string;
+  storeOutApprovedByName?: string;
+  storeOutApprovedAt?: number;
+  storeOutRemarks?: string;
+  
+  closedAt?: number;
+  auditLog: AuditEntry[];
+}
+
+export interface ChecklistTemplate {
+  id: string;
+  brand: PrinterBrand | 'ALL';
+  model: string | 'ALL';
+  items: string[];
+}

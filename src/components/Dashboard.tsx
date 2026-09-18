@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { WorkEntry, UserProfile } from '../types';
 import { calculateEntryTotals, formatDuration } from '../utils';
+import { canAccessModule } from '../utils/permissions';
 import { 
   FileSpreadsheet, 
   Download, 
@@ -21,7 +22,8 @@ import {
   ChevronRight,
   Wifi,
   WifiOff,
-  Sparkles
+  Sparkles,
+  Wrench
 } from 'lucide-react';
 import { format, isSameDay, isSameWeek, parseISO } from 'date-fns';
 import { offlineDb } from '../db/indexedDb';
@@ -38,6 +40,7 @@ interface DashboardProps {
   onOpenEngineerBag?: () => void;
   onOpenTestingTracker?: () => void;
   onOpenClientMachines?: () => void;
+  onOpenWorkshop?: () => void;
   profile: UserProfile;
 }
 
@@ -52,6 +55,7 @@ export function Dashboard({
   onOpenEngineerBag,
   onOpenTestingTracker,
   onOpenClientMachines,
+  onOpenWorkshop,
   profile 
 }: DashboardProps) {
   const today = new Date();
@@ -189,50 +193,44 @@ export function Dashboard({
 
         {/* Priority Flow: My Clients → Machines → Service Report → My Bag → Testing → Backup */}
         <div className="grid grid-cols-3 gap-2">
-          <button
-            onClick={onOpenClientMachines}
-            className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
-          >
-            <Building2 className="w-5 h-5 text-blue-400" />
-            <span className="text-[10px] font-black uppercase">My Clients</span>
-          </button>
-
-          <button
-            onClick={onOpenClientMachines}
-            className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
-          >
-            <Printer className="w-5 h-5 text-emerald-400" />
-            <span className="text-[10px] font-black uppercase">Machines</span>
-          </button>
-
-
-
-          <button
-            onClick={onOpenEngineerBag}
-            className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
-          >
-            <Briefcase className="w-5 h-5 text-purple-400" />
-            <span className="text-[10px] font-black uppercase">My Bag</span>
-          </button>
-
-          <button
-            onClick={onOpenTestingTracker}
-            className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
-          >
-            <Activity className="w-5 h-5 text-amber-400" />
-            <span className="text-[10px] font-black uppercase">Testing Parts</span>
-          </button>
-
-          <button
-            onClick={onOpenTestingTracker}
-            className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
-          >
-            <Clock className="w-5 h-5 text-teal-400" />
-            <span className="text-[10px] font-black uppercase">Backup Spares</span>
-          </button>
+          {canAccessModule(profile, 'clients') && (
+            <button
+              onClick={onOpenClientMachines}
+              className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
+            >
+              <Building2 className="w-5 h-5 text-blue-400" />
+              <span className="text-[10px] font-black uppercase">My Clients</span>
+            </button>
+          )}
+          {canAccessModule(profile, 'machines') && (
+            <button
+              onClick={onOpenClientMachines}
+              className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
+            >
+              <Printer className="w-5 h-5 text-emerald-400" />
+              <span className="text-[10px] font-black uppercase">Machines</span>
+            </button>
+          )}
+          {canAccessModule(profile, 'engineerBag') && (
+            <button
+              onClick={onOpenEngineerBag}
+              className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
+            >
+              <Briefcase className="w-5 h-5 text-purple-400" />
+              <span className="text-[10px] font-black uppercase">My Bag</span>
+            </button>
+          )}
+          {canAccessModule(profile, 'machines') && ( // Assuming testing/backup falls under testing/machines
+            <button
+              onClick={onOpenTestingTracker}
+              className="p-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-xl flex flex-col items-center justify-center text-center space-y-1 transition-all"
+            >
+              <Activity className="w-5 h-5 text-amber-400" />
+              <span className="text-[10px] font-black uppercase">Testing Parts</span>
+            </button>
+          )}
         </div>
       </div>
-
       {/* KPI Metrics Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Today's Job Time */}
@@ -312,8 +310,9 @@ export function Dashboard({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           
-          {/* Equipment Base & Consumables CRM */}
-          <button
+          {canAccessModule(profile, 'machines') && (
+<> {/* Equipment Base & Consumables CRM */}
+<button
             onClick={onOpenClientMachines}
             className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-emerald-600 hover:shadow-md transition-all text-left group flex flex-col justify-between"
           >
@@ -338,12 +337,15 @@ export function Dashboard({
               <ChevronRight className="w-4 h-4 ml-1" />
             </div>
           </button>
+</>
+)}
 
           {/* Service Reports / Work Orders */}
 
 
-          {/* Parts Master Catalog */}
-          <button
+          {canAccessModule(profile, 'inventory') && (
+<> {/* Parts Master Catalog */}
+<button
             onClick={onOpenPartsCatalog}
             className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-blue-600 hover:shadow-md transition-all text-left group flex flex-col justify-between"
           >
@@ -368,6 +370,8 @@ export function Dashboard({
               <ChevronRight className="w-4 h-4 ml-1" />
             </div>
           </button>
+</>
+)}
 
           {/* Store Room Inventory or Engineer Bag */}
           {isStore || isAdmin ? (
@@ -424,8 +428,9 @@ export function Dashboard({
             </button>
           )}
 
-          {/* Testing / Backup Tracker */}
-          <button
+          {canAccessModule(profile, 'partsIssue') && (
+<> {/* Testing / Backup Tracker */}
+<button
             onClick={onOpenTestingTracker}
             className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-amber-500 hover:shadow-md transition-all text-left group flex flex-col justify-between"
           >
@@ -450,9 +455,42 @@ export function Dashboard({
               <ChevronRight className="w-4 h-4 ml-1" />
             </div>
           </button>
+</>
+)}
 
-          {/* Weekly Report Timesheets */}
-          <button
+          {canAccessModule(profile, 'workshop') && (
+<> {/* Workshop Module */}
+<button
+            onClick={onOpenWorkshop}
+            className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-emerald-600 hover:shadow-md transition-all text-left group flex flex-col justify-between"
+          >
+            <div>
+              <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform border border-emerald-100">
+                <Wrench className="w-5 h-5" />
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-black text-gray-900 uppercase tracking-wide">
+                  Workshop Machines
+                </p>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                  Repairs
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                Manage machines in workshop, repair history, parts used, and in/out checklists.
+              </p>
+            </div>
+            <div className="flex items-center text-emerald-700 font-bold text-xs mt-4 group-hover:translate-x-1 transition-transform">
+              <span>View Workshop</span>
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </div>
+          </button>
+</>
+)}
+
+          {canAccessModule(profile, 'reports') && (
+<> {/* Weekly Report Timesheets */}
+<button
             onClick={onViewReport}
             className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-blue-600 hover:shadow-md transition-all text-left group flex flex-col justify-between"
           >
@@ -477,10 +515,11 @@ export function Dashboard({
               <ChevronRight className="w-4 h-4 ml-1" />
             </div>
           </button>
+</>
+)}
 
         </div>
       </div>
-
       {/* Recent Activity Table for Desktop */}
       {!isStore && recentEntries.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
