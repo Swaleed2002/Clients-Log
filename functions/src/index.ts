@@ -74,3 +74,32 @@ export const adminDeleteUser = onCall(async (request) => {
     throw new HttpsError("internal", error.message || "Failed to delete user");
   }
 });
+
+// Verify whether the current Firebase session has been revoked
+export const verifySession = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "User must be authenticated.");
+  }
+
+  const { idToken } = request.data || {};
+
+  if (!idToken || typeof idToken !== "string") {
+    throw new HttpsError("invalid-argument", "Missing ID token.");
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken, true);
+
+    if (decoded.uid !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Token user mismatch.");
+    }
+
+    return { valid: true };
+  } catch (error: any) {
+    console.error("Session verification failed:", error);
+    throw new HttpsError(
+      "unauthenticated",
+      "Session expired or revoked."
+    );
+  }
+});

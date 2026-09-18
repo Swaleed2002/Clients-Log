@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { auth, db } from '../firebase';
+import { auth, db, functions } from '../firebase';
 import { 
   signInWithEmailAndPassword, 
   signOut, 
@@ -7,6 +7,7 @@ import {
   User as FirebaseUser
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { UserProfile } from '../types';
 
 export const DOMAIN_SUFFIX = '@fieldengineer.local';
@@ -54,6 +55,38 @@ export function useAuth() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const verify = httpsCallable(functions, 'verifySession');
+    let checking = false;
+
+    const checkSession = async () => {
+      if (checking || !auth.currentUser) return;
+      checking = true;
+
+      try {
+        const idToken = await auth.currentUser.getIdToken(false);
+        await verify({ idToken });
+      } catch (error) {
+        console.warn('Session revoked - logging out');
+        await signOut(auth);
+      } finally {
+        checking = false;
+      }
+    };
+
+    void checkSession();
+
+    const timer = window.setInterval(checkSession, 15000);
+    window.addEventListener('focus', checkSession);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', checkSession);
+    };
+  }, [user?.uid]);
 
   const login = async (userId: string, password: string) => {
     const email = `${userId.trim().toUpperCase()}${DOMAIN_SUFFIX}`;
