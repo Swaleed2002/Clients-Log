@@ -9,10 +9,18 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function calculateDuration(start: string, end: string): TimeDuration {
-  if (!start || !end) return { hours: 0, minutes: 0, totalMinutes: 0 };
+  if (!start || !end || typeof start !== 'string' || typeof end !== 'string') {
+    return { hours: 0, minutes: 0, totalMinutes: 0 };
+  }
   
-  const [startH, startM] = start.split(':').map(Number);
-  const [endH, endM] = end.split(':').map(Number);
+  const partsS = start.split(':').map(Number);
+  const partsE = end.split(':').map(Number);
+  if (partsS.length < 2 || partsE.length < 2 || isNaN(partsS[0]) || isNaN(partsS[1]) || isNaN(partsE[0]) || isNaN(partsE[1])) {
+    return { hours: 0, minutes: 0, totalMinutes: 0 };
+  }
+
+  const [startH, startM] = partsS;
+  const [endH, endM] = partsE;
   
   let startTotalM = startH * 60 + startM;
   let endTotalM = endH * 60 + endM;
@@ -28,6 +36,39 @@ export function calculateDuration(start: string, end: string): TimeDuration {
   return { hours, minutes, totalMinutes };
 }
 
+export function calculateJobWorkingDuration(
+  jobStart: string,
+  jobStop: string,
+  jobPauses?: { pauseStart: string; pauseEnd?: string; durationMinutes?: number }[],
+  lunchStart?: string | null,
+  lunchEnd?: string | null
+): TimeDuration {
+  if (!jobStart || !jobStop) return { hours: 0, minutes: 0, totalMinutes: 0 };
+
+  const raw = calculateDuration(jobStart, jobStop);
+  let totalDeductionMinutes = 0;
+
+  if (jobPauses && Array.isArray(jobPauses) && jobPauses.length > 0) {
+    jobPauses.forEach(p => {
+      if (typeof p.durationMinutes === 'number' && !isNaN(p.durationMinutes)) {
+        totalDeductionMinutes += p.durationMinutes;
+      } else if (p.pauseStart && p.pauseEnd) {
+        totalDeductionMinutes += calculateDuration(p.pauseStart, p.pauseEnd).totalMinutes;
+      }
+    });
+  } else if (lunchStart && lunchEnd) {
+    // If no explicit pause segments exist, deduct lunch duration if present
+    const lunchDur = calculateDuration(lunchStart, lunchEnd).totalMinutes;
+    totalDeductionMinutes += lunchDur;
+  }
+
+  const netMinutes = Math.max(0, raw.totalMinutes - totalDeductionMinutes);
+  const hours = Math.floor(netMinutes / 60);
+  const minutes = netMinutes % 60;
+
+  return { hours, minutes, totalMinutes: netMinutes };
+}
+
 export function formatDuration(duration: TimeDuration): string {
   if (duration.totalMinutes === 0) return '-';
   const h = duration.hours > 0 ? `${duration.hours}h ` : '';
@@ -38,7 +79,7 @@ export function formatDuration(duration: TimeDuration): string {
 export function calculateEntryTotals(entry: any) {
   let totalTravelMins = 0;
   if (entry.travelSegments && Array.isArray(entry.travelSegments) && entry.travelSegments.length > 0) {
-    totalTravelMins = entry.travelSegments.reduce((sum, seg) => sum + (seg.durationMinutes || 0), 0);
+    totalTravelMins = entry.travelSegments.reduce((sum: number, seg: any) => sum + (seg.durationMinutes || 0), 0);
   } else {
     const tStart = entry.travelStart || entry.travelToStart || '';
     const tStop = entry.travelStop || entry.travelToEnd || '';
@@ -47,7 +88,13 @@ export function calculateEntryTotals(entry: any) {
   
   const jStart = entry.jobStart || '';
   const jStop = entry.jobStop || entry.jobEnd || '';
-  const job = calculateDuration(jStart, jStop);
+  const job = calculateJobWorkingDuration(
+    jStart,
+    jStop,
+    entry.jobPauses,
+    entry.lunchStart,
+    entry.lunchEnd
+  );
   
   const travel = {
     hours: Math.floor(totalTravelMins / 60),

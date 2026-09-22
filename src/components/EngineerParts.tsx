@@ -64,14 +64,17 @@ export const EngineerParts: React.FC<EngineerPartsProps> = ({
   useEffect(() => {
     if (isStoreOrAdmin) {
       getDocs(collection(db, 'users')).then(snap => {
-        const list: UserProfile[] = [];
+        const map = new Map<string, UserProfile>();
         snap.forEach(d => {
           const u = d.data() as UserProfile;
           if (u.role === 'ENGINEER' || u.role === 'ADMIN') {
-            list.push({ uid: d.id, ...u });
+            const key = (u.userId || d.id).trim().toUpperCase();
+            if (!map.has(key) || d.id.length >= 20) {
+              map.set(key, { uid: d.id, ...u });
+            }
           }
         });
-        setEngineers(list);
+        setEngineers(Array.from(map.values()));
       });
     }
   }, [isStoreOrAdmin]);
@@ -208,8 +211,8 @@ export const EngineerParts: React.FC<EngineerPartsProps> = ({
             >
               <option value={currentUser.userId}>My Bag ({currentUser.userId})</option>
               <option value="ALL">All Engineers</option>
-              {engineers.filter(e => e.userId !== currentUser.userId).map(eng => (
-                <option key={eng.userId} value={eng.userId}>
+              {engineers.filter(e => e.userId !== currentUser.userId).map((eng, idx) => (
+                <option key={eng.uid || `${eng.userId}-${idx}`} value={eng.userId}>
                   {eng.fullName} ({eng.userId})
                 </option>
               ))}

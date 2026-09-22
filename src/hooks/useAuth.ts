@@ -39,7 +39,7 @@ export function useAuth() {
           }
 
           if (userDoc.exists()) {
-            setProfile(userDoc.data() as UserProfile);
+            setProfile({ ...userDoc.data(), uid: firebaseUser.uid } as UserProfile);
           } else {
             setProfile(null);
           }

@@ -152,8 +152,25 @@ export function WeeklyReport({ entries, onBack, onEdit, onDelete, onExport }: We
                            {entry.workType}{entry.deliveryType ? ` - ${entry.deliveryType}` : ''}
                          </span>
                       </div>
-                      <h4 className="font-bold text-lg text-gray-800">{entry.customerName}</h4>
+                      <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                        <h4 className="font-bold text-lg text-gray-800">{entry.customerName}</h4>
+                        {entry.customerId && (
+                          <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                            ID: {entry.customerId}
+                          </span>
+                        )}
+                        {entry.isUnregisteredCustomer && (
+                          <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">
+                            New Customer
+                          </span>
+                        )}
+                      </div>
                       {entry.location && <p className="text-sm text-gray-500">{entry.location}</p>}
+                      {(entry.contactPerson || entry.contactNumber) && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Contact: {entry.contactPerson}{entry.contactPerson && entry.contactNumber ? ' • ' : ''}{entry.contactNumber}
+                        </p>
+                      )}
                     </div>
                     <div className="flex gap-2 relative z-10">
                       <button type="button" onClick={() => onEdit(entry)} className="p-2 text-gray-400 hover:text-[#E61C24] hover:bg-red-50 rounded-lg">

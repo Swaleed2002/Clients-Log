@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { WorkEntry } from '../types';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, setDoc, deleteDoc, doc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, deleteDoc, doc, writeBatch, setDoc } from 'firebase/firestore';
+import { offlineDb } from '../db/indexedDb';
 
 export function useWorkEntries(userId?: string) {
   const [entries, setEntries] = useState<WorkEntry[]>([]);
@@ -14,6 +15,16 @@ export function useWorkEntries(userId?: string) {
       return;
     }
 
+    // Load cached offline entries first for instant UI response
+    offlineDb.workEntries.where('userId').equals(userId).toArray().then(cached => {
+      if (cached && cached.length > 0) {
+        cached.sort((a, b) => b.createdAt - a.createdAt);
+        setEntries(prev => prev.length === 0 ? cached : prev);
+      }
+    }).catch(err => {
+      console.warn('Could not read cached work entries from IndexedDB:', err);
+    });
+
     const q = query(collection(db, 'entries'), where('userId', '==', userId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedEntries: WorkEntry[] = [];
@@ -24,8 +35,23 @@ export function useWorkEntries(userId?: string) {
       fetchedEntries.sort((a, b) => b.createdAt - a.createdAt);
       setEntries(fetchedEntries);
       setIsLoaded(true);
-    }, (err) => {
+      // Mirror to IndexedDB
+      if (fetchedEntries.length > 0) {
+        offlineDb.workEntries.bulkPut(fetchedEntries).catch(err => {
+          console.warn('Could not mirror entries to IndexedDB:', err);
+        });
+      }
+    }, async (err) => {
       console.error("Firestore onSnapshot error:", err);
+      // Fallback to IndexedDB when offline
+      try {
+        const cached = await offlineDb.workEntries.where('userId').equals(userId).toArray();
+        cached.sort((a, b) => b.createdAt - a.createdAt);
+        setEntries(cached);
+      } catch (fallbackErr) {
+        console.error("IndexedDB fallback error:", fallbackErr);
+      }
+      setIsLoaded(true);
     });
 
     return () => unsubscribe();
@@ -35,6 +61,9 @@ export function useWorkEntries(userId?: string) {
     if (new TextEncoder().encode(JSON.stringify(entry)).length > 950000) {
       throw new Error('Work entry is too large. Use a smaller Work Order image or shorten the details.');
     }
+    // Always persist to local IndexedDB first
+    await offlineDb.workEntries.put(entry);
+
     const batch = writeBatch(db);
     batch.set(doc(db, 'entries', entry.id), entry);
     if (entry.machineId) {
@@ -99,6 +128,7 @@ export function useWorkEntries(userId?: string) {
   const deleteEntry = async (id: string) => {
     if (!userId) return;
     setEntries(prev => prev.filter(e => e.id !== id));
+    await offlineDb.workEntries.delete(id).catch(err => console.warn('IndexedDB delete error:', err));
     try {
       await deleteDoc(doc(db, 'entries', id));
     } catch (err) {

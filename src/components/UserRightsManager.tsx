@@ -87,9 +87,9 @@ export function UserRightsManager({ users, onUpdate }: Props) {
             onChange={e => setSearch(e.target.value)}
           />
           <div className="space-y-2 max-h-[600px] overflow-y-auto">
-            {filteredUsers.map(user => (
+            {filteredUsers.map((user, idx) => (
               <button
-                key={user.uid}
+                key={user.uid || `${user.userId}-${idx}`}
                 onClick={() => handleSelectUser(user.uid!)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${
                   selectedUserUid === user.uid 

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, WorkEntry } from '../types';
-import { db } from '../firebase';
+import { db, functions, auth } from '../firebase';
 import { collection, query, getDocs, doc, setDoc, deleteDoc, updateDoc, where } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { signOut } from 'firebase/auth';
 import { Users, Lock, UserPlus, UserX, UserCheck, Trash2, ArrowLeft, Download } from 'lucide-react';
 import { DOMAIN_SUFFIX } from '../hooks/useAuth';
 import { exportToExcel } from '../utils';
@@ -27,6 +29,7 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
   
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -39,9 +42,34 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
     try {
       const q = query(collection(db, 'users'));
       const snapshot = await getDocs(q);
-      const fetched: UserProfile[] = [];
-      snapshot.forEach(docSnap => fetched.push({ ...docSnap.data(), uid: docSnap.id } as UserProfile));
-      setUsers(fetched);
+      const userMap = new Map<string, UserProfile>();
+      
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data() as UserProfile;
+        const profile: UserProfile = { ...data, uid: docSnap.id };
+        const key = (profile.userId || docSnap.id).trim().toUpperCase();
+        
+        // If we find an orphan doc with ID 'ADMIN' while currentUser has a real Auth UID, clean up the stale doc
+        if (docSnap.id === 'ADMIN' && currentUser.uid && currentUser.uid !== 'ADMIN') {
+          deleteDoc(doc(db, 'users', 'ADMIN')).catch(console.warn);
+        }
+
+        if (!userMap.has(key)) {
+          userMap.set(key, profile);
+        } else {
+          // If duplicate exists (e.g. legacy 'ADMIN' doc ID vs real Auth UID), prefer real Auth UID
+          const existing = userMap.get(key)!;
+          const isCurrent = docSnap.id === currentUser.uid;
+          const isDocAuthUid = docSnap.id.length >= 20;
+          const isExistingAuthUid = (existing.uid?.length || 0) >= 20;
+          
+          if (isCurrent || (isDocAuthUid && !isExistingAuthUid)) {
+            userMap.set(key, profile);
+          }
+        }
+      });
+      
+      setUsers(Array.from(userMap.values()));
     } catch (err) {
       console.error(err);
       setMessage({ type: 'error', text: 'Failed to load users. Are you an Admin?' });
@@ -64,8 +92,6 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
       const email = `${normalizedUserId}${DOMAIN_SUFFIX}`;
       
       // 1. Ask backend to create the user securely using Admin SDK
-      const { httpsCallable } = await import('firebase/functions');
-      const { functions } = await import('../firebase');
       const adminCreateUser = httpsCallable(functions, 'adminCreateUser');
       
       const res = await adminCreateUser({
@@ -117,8 +143,6 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
       
       // 2. Attempt to delete from Backend Auth (may fail in preview environments without Service Account keys)
       try {
-        const { httpsCallable } = await import('firebase/functions');
-        const { functions } = await import('../firebase');
         const adminDeleteUser = httpsCallable(functions, 'adminDeleteUser');
         await adminDeleteUser({ uid });
       } catch (backendErr) {
@@ -140,31 +164,43 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
       setMessage({ type: 'error', text: 'Passwords do not match.' });
       return;
     }
+    if (resetPassword.length < 6) {
+      setMessage({ type: 'error', text: 'Password must be at least 6 characters.' });
+      return;
+    }
+
+    const targetUid = selectedUser.uid || selectedUser.userId;
+    if (!targetUid) {
+      setMessage({ type: 'error', text: 'Could not determine user UID for password reset.' });
+      return;
+    }
     
+    setResettingPassword(true);
+    setMessage({ type: '', text: '' });
+
     try {
-      if (selectedUser.userId === currentUser.userId) {
-        // Use client SDK to update own password to bypass the need for Admin SDK (which requires deployment)
-        const { getAuth, updatePassword } = await import('firebase/auth');
-        const auth = getAuth();
-        if (auth.currentUser) {
-          await updatePassword(auth.currentUser, resetPassword);
-        } else {
-          throw new Error('Not authenticated');
-        }
-      } else {
-        const { httpsCallable } = await import('firebase/functions');
-        const { functions } = await import('../firebase');
-        const adminUpdatePassword = httpsCallable(functions, 'adminUpdatePassword');
-        // selectedUser.uid is the actual Firebase Auth UID we need to pass
-        await adminUpdatePassword({ uid: selectedUser.uid, password: resetPassword });
-      }
+      // Call the existing Firebase callable Cloud Function using Admin SDK
+      const adminUpdatePassword = httpsCallable(functions, 'adminUpdatePassword');
+      await adminUpdatePassword({
+        uid: targetUid,
+        password: resetPassword
+      });
       
       setMessage({ type: 'success', text: `Password for ${selectedUser.fullName} changed successfully.` });
       setResetPassword('');
       setResetConfirm('');
       setSelectedUser(null);
+
+      // Compare: targetUid === auth.currentUser?.uid
+      // Only automatically logout when the Administrator changed THEIR OWN password.
+      if (targetUid === auth.currentUser?.uid) {
+        await signOut(auth);
+      }
     } catch (err: any) {
-      setMessage({ type: 'error', text: `Failed to change password: ${err.message}` });
+      console.error('Password reset error:', err);
+      setMessage({ type: 'error', text: `Failed to change password: ${err.message || 'Unknown error'}` });
+    } finally {
+      setResettingPassword(false);
     }
   };
 
@@ -259,8 +295,8 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="ALL">All Engineers</option>
-                  {users.map(u => (
-                    <option key={u.userId} value={u.userId}>{u.fullName} ({u.userId})</option>
+                  {users.map((u, idx) => (
+                    <option key={u.uid || `${u.userId}-${idx}`} value={u.userId}>{u.fullName} ({u.userId})</option>
                   ))}
                 </select>
               </div>
@@ -314,10 +350,10 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
                   <label className="block text-xs font-bold text-gray-500 mb-1">CONFIRM PASSWORD</label>
                   <input type="password" value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500" />
                 </div>
-                <button type="submit" className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-sm">
-                  CHANGE PASSWORD
+                <button type="submit" disabled={resettingPassword} className="w-full py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold rounded-lg text-sm transition-colors">
+                  {resettingPassword ? 'CHANGING PASSWORD...' : 'CHANGE PASSWORD'}
                 </button>
-                <button type="button" onClick={() => setSelectedUser(null)} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg text-sm">
+                <button type="button" onClick={() => setSelectedUser(null)} disabled={resettingPassword} className="w-full py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 font-bold rounded-lg text-sm transition-colors">
                   CANCEL
                 </button>
               </form>
@@ -336,8 +372,8 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
               ) : users.length === 0 ? (
                 <div className="p-8 text-center text-gray-500 font-medium">No users found.</div>
               ) : (
-                users.map(u => (
-                  <div key={u.userId} className="p-6 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                users.map((u, idx) => (
+                  <div key={u.uid || `${u.userId}-${idx}`} className="p-6 flex items-center justify-between hover:bg-gray-50 transition-colors">
                     <div>
                       <h3 className="font-bold text-gray-900 text-lg flex items-center">
                         {u.fullName}

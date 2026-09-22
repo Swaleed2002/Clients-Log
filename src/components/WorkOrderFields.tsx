@@ -42,11 +42,31 @@ interface Props {
   removeImage: () => void;
   busy: boolean;
   technician: string;
+  customerName?: string;
+  customerId?: string;
 }
 
 export function WorkOrderFields(p: Props) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const sortedMachines = React.useMemo(() => {
+    if (!p.customerName) return p.machines;
+    const target = p.customerName.trim().toLowerCase();
+    const matches: CustomerMachine[] = [];
+    const others: CustomerMachine[] = [];
+    p.machines.forEach(m => {
+      if (
+        (m.customerName && m.customerName.trim().toLowerCase() === target) ||
+        (p.customerId && m.customerId === p.customerId)
+      ) {
+        matches.push(m);
+      } else {
+        others.push(m);
+      }
+    });
+    return [...matches, ...others];
+  }, [p.machines, p.customerName, p.customerId]);
 
   // Track active autocomplete field: { index: number, field: 'partNumber' | 'description' } | null
   const [activeField, setActiveField] = useState<{ index: number; field: 'partNumber' | 'description' } | null>(null);
@@ -134,10 +154,10 @@ export function WorkOrderFields(p: Props) {
           aria-label="Machine"
           className={field}
           value={p.machineId}
-          onChange={e => p.onMachine(p.machines.find(m => m.id === e.target.value))}
+          onChange={e => p.onMachine(sortedMachines.find(m => m.id === e.target.value))}
         >
           <option value="">Select machine for service work</option>
-          {p.machines.map(m => (
+          {sortedMachines.map(m => (
             <option key={m.id} value={m.id}>
               {m.customerName} — {m.model} (S/N: {m.serialNumber})
             </option>

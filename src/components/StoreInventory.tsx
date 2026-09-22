@@ -128,13 +128,17 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
     const fetchUsers = async () => {
       try {
         const snap = await getDocs(collection(db, 'users'));
-        const userList: UserProfile[] = [];
+        const userMap = new Map<string, UserProfile>();
         snap.forEach(d => {
           const u = d.data() as UserProfile;
           if (u.status === 'Active' && (u.role === 'ENGINEER' || u.role === 'ADMIN')) {
-            userList.push({ uid: d.id, ...u });
+            const key = (u.userId || d.id).trim().toUpperCase();
+            if (!userMap.has(key) || d.id.length >= 20) {
+              userMap.set(key, { uid: d.id, ...u });
+            }
           }
         });
+        const userList = Array.from(userMap.values());
         setEngineers(userList);
         if (userList.length > 0 && !issueEngineerId) {
           setIssueEngineerId(userList[0].userId);
@@ -824,8 +828,8 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
                   required
                   className="w-full p-2.5 border border-gray-300 rounded-lg font-bold text-sm"
                 >
-                  {engineers.map(eng => (
-                    <option key={eng.userId} value={eng.userId}>
+                  {engineers.map((eng, idx) => (
+                    <option key={eng.uid || `${eng.userId}-${idx}`} value={eng.userId}>
                       {eng.fullName} ({eng.userId})
                     </option>
                   ))}

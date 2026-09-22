@@ -569,7 +569,17 @@ export function Dashboard({
                         {format(parseISO(entry.date), 'dd MMM yyyy')}
                       </td>
                       <td className="px-6 py-3.5 font-bold text-gray-900">
-                        {entry.customerName || '—'}
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{entry.customerName || '—'}</span>
+                            {entry.isUnregisteredCustomer && (
+                              <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">
+                                New Customer
+                              </span>
+                            )}
+                          </div>
+                          {entry.location && <span className="text-xs text-gray-500 font-normal">{entry.location}</span>}
+                        </div>
                       </td>
                       <td className="px-6 py-3.5">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-700">

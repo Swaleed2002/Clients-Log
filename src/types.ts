@@ -59,6 +59,12 @@ export interface TimeDuration {
   totalMinutes: number;
 }
 
+export interface JobPauseSegment {
+  pauseStart: string; // HH:mm
+  pauseEnd?: string;  // HH:mm
+  durationMinutes?: number;
+}
+
 export interface WorkEntry {
   id: string;
   userId: string;
@@ -72,8 +78,12 @@ export interface WorkEntry {
   partsUsed?: ServiceReportPartUsed[];
   workOrderImage?: string;
   deliveryType?: 'Delivery of Consumables' | 'Delivery of Parts';
+  customerId?: string;
   customerName: string;
   location: string;
+  contactPerson?: string;
+  contactNumber?: string;
+  isUnregisteredCustomer?: boolean;
   
   travelStart: string; // HH:mm
   travelStop: string;
@@ -81,6 +91,8 @@ export interface WorkEntry {
   
   jobStart: string;
   jobStop: string;
+  jobPaused?: boolean;
+  jobPauses?: JobPauseSegment[];
   
   lunchStart?: string | null;
   lunchEnd?: string | null;
