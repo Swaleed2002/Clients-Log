@@ -20,7 +20,8 @@ import {
   query, 
   where, 
   orderBy, 
-  getDocs 
+  getDocs,
+  runTransaction
 } from 'firebase/firestore';
 import { offlineDb } from '../db/indexedDb';
 import { 
@@ -212,94 +213,125 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
     }
   };
 
-  // Submit Issue Part to Engineer
+  // Issue a part and update its stock, ledger and engineer bag in ONE Firestore
+  // transaction. Firestore retries this callback if another user changes stock.
   const handleIssuePart = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!issuePartId || !issueEngineerId || issueQuantity <= 0) return;
-
-    const engObj = engineers.find(e => e.userId === issueEngineerId);
-    const engName = engObj ? engObj.fullName : issueEngineerId;
-
-    // Find in inventory or parts master
-    const invItem = inventory.find(i => i.id === issuePartId || i.partNumber === issuePartId);
-    const masterItem = PARTS_MASTER.find(p => p.partNumber === issuePartId);
-
-    const partNum = invItem ? invItem.partNumber : (masterItem ? masterItem.partNumber : issuePartId);
-    const partDesc = invItem ? invItem.description : (masterItem ? masterItem.description : partNum);
-    const partBrand = invItem ? invItem.brand : (masterItem ? masterItem.brand : 'LINX');
-
-    // 1. Check Store Stock & Deduct if present
-    if (invItem) {
-      if (invItem.quantity < issueQuantity) {
-        if (!window.confirm(`Store only has ${invItem.quantity} units recorded. Issue anyway?`)) {
-          return;
-        }
-      }
-      const updatedInv = {
-        ...invItem,
-        quantity: Math.max(0, invItem.quantity - issueQuantity),
-        updatedAt: Date.now()
-      };
-      await setDoc(doc(db, 'inventory', invItem.id), updatedInv);
-      await offlineDb.storeInventory.put(updatedInv);
+    if (!issuePartId || !issueEngineerId || !Number.isInteger(issueQuantity) || issueQuantity <= 0) {
+      alert('Select a part, engineer and positive whole-number quantity.');
+      return;
     }
 
-    // 2. Create Audit Transaction Record
-    const txId = doc(collection(db, 'partTransactions')).id;
+    const selectedStock = inventory.find(item => item.id === issuePartId);
+    if (!selectedStock) {
+      alert('This part is not recorded in store inventory. Receive it into stock first.');
+      return;
+    }
+    if (selectedStock.condition !== issueCondition) {
+      alert('The issue condition must match the selected stock item.');
+      return;
+    }
+
+    const engineer = engineers.find(item => item.userId === issueEngineerId);
+    if (!engineer) {
+      alert('Select an active engineer.');
+      return;
+    }
+    const customer = clients.find(c => c.id === issueClientId);
+    const machine = machines.find(m => m.id === issueMachineId && m.customerId === issueClientId);
+    const workshop = workshopCases.find(c => c.id === issueWorkshopCaseId);
+    if (issueFor === 'CUSTOMER' && (!customer || !machine)) {
+      alert('Select a valid customer and their machine.');
+      return;
+    }
+    if (issueFor === 'WORKSHOP' && !workshop) {
+      alert('Select a valid workshop case.');
+      return;
+    }
+
+    const now = Date.now();
+    const txRef = doc(collection(db, 'partTransactions'));
+    const stockRef = doc(db, 'inventory', selectedStock.id);
+    const bagDocId = (`${issueEngineerId}_${selectedStock.partNumber}_${issueCondition}`).replace(/[^a-zA-Z0-9_]/g, '_');
+    const bagRef = doc(db, 'engineerBags', bagDocId);
+    const destinationType: PartTransaction['destinationType'] =
+      issueFor === 'CUSTOMER' ? 'CUSTOMER_MACHINE' :
+      issueFor === 'WORKSHOP' ? 'WORKSHOP' : 'ENGINEER';
+    const status: PartTransaction['status'] =
+      issueFor === 'ENGINEER_BAG' ? 'WITH ENGINEER' :
+      issuePurpose === 'Testing' ? 'TESTING' :
+      issuePurpose === 'Backup' ? 'BACKUP' : 'INSTALLED';
+
     const newTx: PartTransaction = {
-      id: txId,
-      partId: partNum,
-      partNumber: partNum,
-      description: partDesc,
-      brand: partBrand,
+      id: txRef.id,
+      partId: selectedStock.partNumber,
+      partNumber: selectedStock.partNumber,
+      description: selectedStock.description,
+      brand: selectedStock.brand,
       sourceType: 'STORE',
-      sourceDetails: 'Main Store Room',
-      destinationType: 'ENGINEER',
-      destinationDetails: `Engineer Bag: ${engName}`,
+      sourceDetails: selectedStock.location || 'Main Store Room',
+      destinationType,
+      destinationDetails: issueFor === 'CUSTOMER'
+        ? `${customer?.name || ''} - ${machine?.serialNumber || ''}`
+        : issueFor === 'WORKSHOP'
+          ? `Workshop: ${workshop?.caseNumber || issueWorkshopCaseId}`
+          : `Engineer Bag: ${engineer.fullName}`,
       engineerId: issueEngineerId,
-      engineerName: engName,
-      customerName: issueCustomerName || undefined,
-      quantity: Number(issueQuantity),
+      engineerName: engineer.fullName,
+      customerId: issueFor === 'CUSTOMER' ? issueClientId : undefined,
+      customerName: issueFor === 'CUSTOMER' ? customer?.name : issueCustomerName || undefined,
+      machineSerial: issueFor === 'CUSTOMER' ? machine?.serialNumber : undefined,
+      quantity: issueQuantity,
       condition: issueCondition,
       purpose: issuePurpose,
-      status: 'WITH ENGINEER',
+      status,
       remarks: issueRemarks,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
       createdBy: currentUser.fullName
     };
-
-    // 3. Credit Engineer Bag Stock
-    const bagDocId = `${issueEngineerId}_${partNum}_${issueCondition}`.replace(/[^a-zA-Z0-9_]/g, '_');
-    const existingBagSnap = await offlineDb.engineerBags.get(bagDocId);
-    const updatedBagQty = (existingBagSnap ? existingBagSnap.quantity : 0) + Number(issueQuantity);
-
-    const bagItem = {
-      id: bagDocId,
-      engineerId: issueEngineerId,
-      engineerName: engName,
-      partId: partNum,
-      partNumber: partNum,
-      description: partDesc,
-      brand: partBrand,
-      quantity: updatedBagQty,
-      condition: issueCondition,
-      updatedAt: Date.now()
-    };
+    // Firestore rejects undefined fields; strip optional properties.
+    const transactionRecord = Object.fromEntries(Object.entries(newTx).filter(([, v]) => v !== undefined)) as PartTransaction;
 
     try {
-      await setDoc(doc(db, 'partTransactions', txId), newTx);
-      await setDoc(doc(db, 'engineerBags', bagDocId), bagItem);
-      await offlineDb.partTransactions.put(newTx);
-      await offlineDb.engineerBags.put(bagItem);
-
+      const remaining = await runTransaction(db, async (transaction) => {
+        const currentStock = await transaction.get(stockRef);
+        const currentBag = issueFor === 'ENGINEER_BAG' ? await transaction.get(bagRef) : null;
+        if (!currentStock.exists()) throw new Error('Stock item was removed by another user.');
+        const available = Number(currentStock.data().quantity || 0);
+        if (available < issueQuantity) {
+          throw new Error(`Insufficient stock: ${available} available, ${issueQuantity} requested.`);
+        }
+        transaction.update(stockRef, { quantity: available - issueQuantity, updatedAt: now });
+        transaction.set(txRef, transactionRecord);
+        if (issueFor === 'ENGINEER_BAG') {
+          const currentQty = Number(currentBag?.data()?.quantity || 0);
+          transaction.set(bagRef, {
+            id: bagDocId,
+            engineerId: issueEngineerId,
+            engineerName: engineer.fullName,
+            partId: selectedStock.partNumber,
+            partNumber: selectedStock.partNumber,
+            description: selectedStock.description,
+            brand: selectedStock.brand,
+            quantity: currentQty + issueQuantity,
+            condition: issueCondition,
+            updatedAt: now
+          });
+        }
+        return available - issueQuantity;
+      });
+      await Promise.all([
+        offlineDb.storeInventory.put({ ...selectedStock, quantity: remaining, updatedAt: now }).catch(console.warn),
+        offlineDb.partTransactions.put(transactionRecord).catch(console.warn)
+      ]);
       setShowIssuePartModal(false);
       setIssueCustomerName('');
       setIssueRemarks('');
-      alert(`Issued ${issueQuantity}x ${partNum} to ${engName}. Added to engineer bag!`);
-    } catch (err) {
-      console.error("Failed to issue part:", err);
-      alert("Error issuing part to engineer.");
+      alert(`Issued ${issueQuantity}x ${selectedStock.partNumber} successfully.`);
+    } catch (error: any) {
+      console.error('Atomic stock issue failed:', error);
+      alert(error?.message || 'Part issue failed. No stock transfer was committed.');
     }
   };
 
