@@ -28,7 +28,8 @@ export function ServiceReportsList({ currentUser, onNew, onEdit, onBack }: Servi
       if (currentUser.role === 'ADMIN' || currentUser.role === 'STORE') {
         q = query(collection(db, 'serviceReports'), orderBy('createdAt', 'desc'));
       } else {
-        q = query(collection(db, 'serviceReports'), where('userId', '==', currentUser.userId));
+        const identifiers = [...new Set([currentUser.userId, currentUser.uid].filter((x): x is string => !!x))];
+        q = query(collection(db, 'serviceReports'), where('userId', 'in', identifiers));
       }
       const snapshot = await getDocs(q);
       const fetched: ServiceReport[] = [];
