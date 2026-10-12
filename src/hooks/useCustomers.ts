@@ -82,12 +82,21 @@ export function useCustomers() {
   // 2. Real-time Firestore sync with offline fallback
   useEffect(() => {
     let cachedMachines: CustomerMachine[] = [];
+    let cachedClients: Client[] = [];
+    let alive = true;
+    const refresh = () => {
+      if (!alive) return;
+      setClients(mergeCustomers(cachedClients, cachedMachines));
+      setIsLoaded(true);
+    };
 
     // Also get machines to ensure any machine-registered customer is present
     const unsubMachines = onSnapshot(collection(db, 'customerMachines'), (mSnap) => {
       cachedMachines = mSnap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerMachine));
+      offlineDb.customerMachines.bulkPut(cachedMachines).catch(() => {});
+      refresh();
     }, () => {
-      offlineDb.customerMachines.toArray().then(m => { cachedMachines = m; });
+      offlineDb.customerMachines.toArray().then(m => { cachedMachines = m; refresh(); });
     });
 
     const unsubClients = onSnapshot(collection(db, 'clients'), (snap) => {
@@ -96,25 +105,23 @@ export function useCustomers() {
         list.push({ id: d.id, ...d.data() } as Client);
       });
 
-      if (list.length > 0) {
-        offlineDb.clients.bulkPut(list).catch(() => {});
-      }
-
-      const merged = mergeCustomers(list, cachedMachines);
-      setClients(merged);
-      setIsLoaded(true);
+      cachedClients = list;
+      if (list.length > 0) offlineDb.clients.bulkPut(list).catch(() => {});
+      refresh();
     }, (err) => {
       console.warn('Clients onSnapshot listener error (falling back to IndexedDB):', err);
       Promise.all([
         offlineDb.clients.toArray().catch(() => [] as Client[]),
         offlineDb.customerMachines.toArray().catch(() => [] as CustomerMachine[])
       ]).then(([localClients, localMachines]) => {
-        setClients(mergeCustomers(localClients, localMachines));
-        setIsLoaded(true);
+        cachedClients = localClients;
+        cachedMachines = localMachines;
+        refresh();
       });
     });
 
     return () => {
+      alive = false;
       unsubMachines();
       unsubClients();
     };
