@@ -335,65 +335,77 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
     }
   };
 
-  // Receive Return into Store
+  // Return receipt is idempotent: accepting the same return twice cannot
+  // add stock twice, and a failure rolls back all three affected records.
   const handleConfirmReturn = async () => {
     if (!selectedTxForReturn) return;
-
-    // Update Transaction
-    const updatedTx: PartTransaction = {
-      ...selectedTxForReturn,
-      status: 'RETURNED',
-      storeReceivedAt: Date.now(),
-      storeReceivedBy: currentUser.fullName,
-      updatedAt: Date.now()
-    };
-
-    // Add back to Store Inventory
-    const existingInv = inventory.find(i => i.partNumber === selectedTxForReturn.partNumber && i.condition === selectedTxForReturn.condition);
-    const invId = existingInv ? existingInv.id : doc(collection(db, 'inventory')).id;
-
-    const updatedInv: StoreInventoryItem = {
-      id: invId,
-      partId: selectedTxForReturn.partNumber,
-      partNumber: selectedTxForReturn.partNumber,
-      description: selectedTxForReturn.description,
-      brand: selectedTxForReturn.brand,
-      applicableModels: [],
-      quantity: existingInv ? existingInv.quantity + selectedTxForReturn.quantity : selectedTxForReturn.quantity,
-      condition: selectedTxForReturn.condition,
-      location: existingInv ? existingInv.location : 'Returns Bin R1',
-      minStock: existingInv ? existingInv.minStock : 1,
-      createdAt: existingInv ? existingInv.createdAt : Date.now(),
-      updatedAt: Date.now()
-    };
-
-    // Deduct from Engineer Bag
-    const bagDocId = `${selectedTxForReturn.engineerId}_${selectedTxForReturn.partNumber}_${selectedTxForReturn.condition}`.replace(/[^a-zA-Z0-9_]/g, '_');
-    const existingBag = await offlineDb.engineerBags.get(bagDocId);
-    if (existingBag) {
-      const newQty = Math.max(0, existingBag.quantity - selectedTxForReturn.quantity);
-      if (newQty === 0) {
-        await deleteDoc(doc(db, 'engineerBags', bagDocId)).catch(() => {});
-        await offlineDb.engineerBags.delete(bagDocId).catch(() => {});
-      } else {
-        const upBag = { ...existingBag, quantity: newQty, updatedAt: Date.now() };
-        await setDoc(doc(db, 'engineerBags', bagDocId), upBag);
-        await offlineDb.engineerBags.put(upBag);
-      }
-    }
+    const returning = selectedTxForReturn;
+    const now = Date.now();
+    const txRef = doc(db, 'partTransactions', returning.id);
+    const bagDocId = (`${returning.engineerId}_${returning.partNumber}_${returning.condition}`).replace(/[^a-zA-Z0-9_]/g, '_');
+    const bagRef = doc(db, 'engineerBags', bagDocId);
+    const inventoryMatch = inventory.find(i => i.partNumber === returning.partNumber && i.condition === returning.condition);
+    const stockRef = doc(db, 'inventory', inventoryMatch?.id || doc(collection(db, 'inventory')).id);
 
     try {
-      await setDoc(doc(db, 'partTransactions', selectedTxForReturn.id), updatedTx);
-      await setDoc(doc(db, 'inventory', invId), updatedInv);
-      await offlineDb.partTransactions.put(updatedTx);
-      await offlineDb.storeInventory.put(updatedInv);
+      await runTransaction(db, async (tx) => {
+        // Every read must happen before the first transaction write.
+        const returnSnap = await tx.get(txRef);
+        const bagSnap = await tx.get(bagRef);
+        const stockSnap = await tx.get(stockRef);
 
+        if (!returnSnap.exists()) throw new Error('The return request no longer exists.');
+        const current = returnSnap.data() as PartTransaction;
+        if (current.status === 'RETURNED' || current.storeReceivedAt) {
+          throw new Error('This return was already received. Inventory was not modified.');
+        }
+        if (current.status !== 'WITH ENGINEER' || !current.returnInitiatedAt || current.sourceType !== 'MY BAG') {
+          throw new Error('This is not a valid engineer bag return.');
+        }
+        if (!Number.isInteger(current.quantity) || current.quantity < 1) {
+          throw new Error('Return quantity must be a positive whole number.');
+        }
+        const bagQty = Number(bagSnap.data()?.quantity || 0);
+        if (bagQty < current.quantity) {
+          throw new Error(`Engineer bag contains ${bagQty}, but ${current.quantity} were requested for return.`);
+        }
+
+        const existingQty = Number(stockSnap.data()?.quantity || 0);
+        const restored: StoreInventoryItem = {
+          id: stockRef.id,
+          partId: current.partNumber,
+          partNumber: current.partNumber,
+          description: current.description,
+          brand: current.brand,
+          applicableModels: stockSnap.exists() ? (stockSnap.data().applicableModels || []) : [],
+          quantity: existingQty + current.quantity,
+          condition: current.condition,
+          location: stockSnap.exists() ? (stockSnap.data().location || 'Returns Bin R1') : 'Returns Bin R1',
+          minStock: stockSnap.exists() ? Number(stockSnap.data().minStock || 1) : 1,
+          createdAt: stockSnap.exists() ? (stockSnap.data().createdAt || now) : now,
+          updatedAt: now
+        };
+        tx.set(stockRef, restored);
+        if (bagQty === current.quantity) {
+          tx.delete(bagRef);
+        } else {
+          tx.update(bagRef, { quantity: bagQty - current.quantity, updatedAt: now });
+        }
+        tx.update(txRef, {
+          status: 'RETURNED',
+          storeReceivedAt: now,
+          storeReceivedBy: currentUser.fullName,
+          updatedAt: now
+        });
+      });
+
+      // Cloud snapshots are the source of truth; they repopulate IndexedDB.
       setShowReceiveReturnModal(false);
       setSelectedTxForReturn(null);
-      alert(`Return confirmed. ${selectedTxForReturn.quantity}x ${selectedTxForReturn.partNumber} restored to Store inventory.`);
-    } catch (err) {
-      console.error("Failed to receive return:", err);
-      alert("Error confirming return.");
+      alert(`Return confirmed. ${returning.quantity}x ${returning.partNumber} restored to store stock.`);
+    } catch (error: any) {
+      console.error('Atomic return failed:', error);
+      alert(error?.message || 'Return failed; no stock or bag mutation was committed.');
     }
   };
 
