@@ -1,0 +1,56 @@
+name: CRM Quality Gate
+
+on:
+  push:
+    branches:
+      - 'fix/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Java for Firestore emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate TypeScript
+        run: bun run lint
+
+      - name: Build production frontend
+        run: bun run build
+
+      - name: Install and compile Firebase Functions
+        run: |
+          cd functions
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Install QA-only Firebase test tools
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase-tools@14 @firebase/rules-unit-testing@5
+
+      - name: Firestore role and integrity tests
+        run: npx firebase emulators:exec --project demo-reliable-coding-qa --only firestore "node --test tests/firestore.rules.test.mjs"
