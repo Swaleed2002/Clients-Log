@@ -177,39 +177,52 @@ export const StoreInventory: React.FC<StoreInventoryProps> = ({ currentUser }) =
     }
   };
 
-  // Submit Add Stock
+  // Concurrent restocks are added from the latest server stock balance.
   const handleSaveStock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addPartNumber.trim()) return;
-
-    const existing = inventory.find(i => i.partNumber === addPartNumber.trim() && i.condition === addCondition);
-    const itemId = existing ? existing.id : doc(collection(db, 'inventory')).id;
-
-    const newStockItem: StoreInventoryItem = {
-      id: itemId,
-      partId: addPartNumber.trim(),
-      partNumber: addPartNumber.trim(),
-      description: addDescription.trim() || addPartNumber.trim(),
-      brand: addBrand,
-      applicableModels: [],
-      quantity: existing ? existing.quantity + Number(addQuantity) : Number(addQuantity),
-      condition: addCondition,
-      location: addLocation,
-      minStock: Number(addMinStock),
-      createdAt: existing ? existing.createdAt : Date.now(),
-      updatedAt: Date.now()
-    };
+    const partNo = addPartNumber.trim();
+    if (!partNo || !Number.isInteger(addQuantity) || addQuantity <= 0) {
+      alert('Enter a part number and positive whole-number quantity.');
+      return;
+    }
+    const existing = inventory.find(i => i.partNumber === partNo && i.condition === addCondition);
+    const canonicalId = ('stock_' + partNo + '_' + addCondition)
+      .replace(/[^a-zA-Z0-9_]/g, '_');
+    const ref = doc(db, 'inventory', existing?.id || canonicalId);
+    const now = Date.now();
 
     try {
-      await setDoc(doc(db, 'inventory', itemId), newStockItem);
-      await offlineDb.storeInventory.put(newStockItem);
+      const saved = await runTransaction(db, async (tx) => {
+        const current = await tx.get(ref);
+        const currentData = current.data() as StoreInventoryItem | undefined;
+        if (currentData && (currentData.partNumber !== partNo || currentData.condition !== addCondition)) {
+          throw new Error('Stock identifier conflict. Please ask Admin to reconcile the part.');
+        }
+        const next: StoreInventoryItem = {
+          id: ref.id,
+          partId: partNo,
+          partNumber: partNo,
+          description: addDescription.trim() || currentData?.description || partNo,
+          brand: addBrand,
+          applicableModels: currentData?.applicableModels || [],
+          quantity: Number(currentData?.quantity || 0) + addQuantity,
+          condition: addCondition,
+          location: currentData?.location || addLocation,
+          minStock: Number(addMinStock),
+          createdAt: currentData?.createdAt || now,
+          updatedAt: now
+        };
+        tx.set(ref, next);
+        return next;
+      });
+      await offlineDb.storeInventory.put(saved).catch(console.warn);
       setShowAddStockModal(false);
       setAddPartNumber('');
       setAddDescription('');
       setAddQuantity(1);
-    } catch (err) {
-      console.error("Failed to add inventory stock:", err);
-      alert("Error saving inventory item to database.");
+    } catch (error: any) {
+      console.error('Atomic restock failed', error);
+      alert(error?.message || 'Could not restock inventory.');
     }
   };
 
