@@ -35,6 +35,7 @@ before(async () => {
       id: 'entry_my-entry', userId: uid.engineer, linkedEntryId: 'my-entry'
     });
     await db.collection('serviceReports').doc('unrelated-report').set({ id: 'unrelated-report', userId: uid.engineer });
+    await db.collection('serviceReports').doc('colleague-report').set({ id: 'colleague-report', userId: uid.colleague });
     await db.collection('inventory').doc('spare-1').set({ partNumber: '123', quantity: 5 });
   });
 });
@@ -98,4 +99,33 @@ test('Engineers may delete only their linked entry-derived reports', async () =>
   await assertSucceeds(db.collection('serviceReports').doc('entry_my-entry').get());
   const deleted = await db.collection('serviceReports').doc('entry_my-entry').get();
   assert.equal(deleted.exists, false);
+});
+
+
+test('Reports and stock reject cross-user or negative-quantity edits', async () => {
+  const engineer = userDb(uid.engineer);
+  const store = userDb(uid.store);
+  await assertFails(engineer.collection('serviceReports').doc('colleague-report').update({ remarks: 'unauthorized' }));
+  await assertSucceeds(engineer.collection('serviceReports').doc('unrelated-report').update({ remarks: 'my report' }));
+  await assertFails(engineer.collection('inventory').doc('spare-1').update({ quantity: 2 }));
+  await assertFails(store.collection('inventory').doc('spare-1').update({ quantity: -5 }));
+  await assertSucceeds(store.collection('inventory').doc('spare-1').update({ quantity: 4 }));
+});
+
+test('Only Store/Admin can receive a valid engineer return', async () => {
+  const engineer = userDb(uid.engineer);
+  const store = userDb(uid.store);
+  const record = {
+    engineerId: 'ENG001', engineerName: 'ENG001', partNumber: '123',
+    description: 'Spare', sourceType: 'MY BAG', destinationType: 'STORE',
+    status: 'WITH ENGINEER', quantity: 1, returnInitiatedAt: Date.now(),
+    createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'ENG001'
+  };
+  await assertSucceeds(engineer.collection('partTransactions').doc('requested-return').set(record));
+  await assertFails(engineer.collection('partTransactions').doc('requested-return').update({ status: 'RETURNED' }));
+  await assertSucceeds(store.collection('partTransactions').doc('requested-return').update({
+    status: 'RETURNED', storeReceivedAt: Date.now(),
+    storeReceivedBy: 'STORE001', updatedAt: Date.now()
+  }));
+  await assertFails(store.collection('partTransactions').doc('requested-return').update({ status: 'WITH ENGINEER' }));
 });
