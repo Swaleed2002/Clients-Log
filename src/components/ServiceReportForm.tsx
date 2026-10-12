@@ -42,6 +42,7 @@ import {
 interface ServiceReportFormProps {
   initialData?: ServiceReport;
   currentUser: UserProfile;
+  readOnly?: boolean;
   preselectedBagItem?: EngineerBagItem | null;
   onBack: () => void;
   onSaved: () => void;
@@ -50,6 +51,7 @@ interface ServiceReportFormProps {
 export function ServiceReportForm({ 
   initialData, 
   currentUser, 
+  readOnly = false,
   preselectedBagItem,
   onBack, 
   onSaved 
@@ -93,7 +95,7 @@ export function ServiceReportForm({
   );
 
   // Helper Parts Drawer / Quick-add state
-  const [showPartsHelper, setShowPartsHelper] = useState(true);
+  const [showPartsHelper, setShowPartsHelper] = useState(!readOnly);
   const [helperBrand, setHelperBrand] = useState<PrinterBrand>('LINX');
   const [helperSearch, setHelperSearch] = useState('');
   const [selectedSource, setSelectedSource] = useState<PartSource>('MY BAG');
@@ -126,6 +128,7 @@ export function ServiceReportForm({
   // never by reading a shared sequence directly from a client.
 
   const handleChange = (field: keyof ServiceReport, value: any) => {
+    if (readOnly) return;
     setReport(prev => ({ ...prev, [field]: value }));
   };
 
@@ -179,7 +182,7 @@ export function ServiceReportForm({
   // The backend commits the report, the ledger, bag consumption and the
   // official report number in one authoritative Firestore transaction.
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || readOnly) return;
     setSaving(true);
     try {
       if (!String(report.customer || '').trim() || !String(report.date || '').trim()) {
@@ -225,6 +228,7 @@ export function ServiceReportForm({
       <div className="flex-grow border-b border-dotted border-gray-600 relative">
         <input
           type="text"
+          readOnly={readOnly}
           value={report[field] as string || ''}
           onChange={e => handleChange(field, e.target.value)}
           placeholder={placeholder}
@@ -264,13 +268,13 @@ export function ServiceReportForm({
         </button>
 
         <div className="flex items-center space-x-2">
-          <button
+          {!readOnly && <button
             onClick={() => setShowPartsHelper(!showPartsHelper)}
             className="flex items-center text-xs font-bold text-gray-700 bg-white border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
           >
             <Package className="w-4 h-4 mr-1 text-[#E61C24]" />
             {showPartsHelper ? 'HIDE PARTS PICKER' : 'PARTS PICKER & DEDUCTOR'}
-          </button>
+          </button>}
           
           <button
             onClick={handlePrint}
@@ -280,19 +284,19 @@ export function ServiceReportForm({
             PRINT A4 WORK ORDER
           </button>
 
-          <button
+          {!readOnly && <button
             onClick={handleSave}
             disabled={saving}
             className="flex items-center text-xs font-bold text-white bg-[#E61C24] hover:bg-red-700 px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50"
           >
             <Save className="w-4 h-4 mr-1.5" />
             {saving ? 'SAVING...' : 'SAVE WORK ORDER'}
-          </button>
+          </button>}
         </div>
       </div>
 
       {/* Non-print Parts Helper Drawer */}
-      {showPartsHelper && (
+      {!readOnly && showPartsHelper && (
         <div className="max-w-[210mm] mx-auto mb-6 bg-white border border-gray-200 rounded-2xl p-5 shadow-sm print:hidden space-y-4">
           <div className="flex items-center justify-between border-b pb-3">
             <div className="flex items-center space-x-2">
