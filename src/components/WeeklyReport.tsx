@@ -8,7 +8,7 @@ interface WeeklyReportProps {
   entries: WorkEntry[];
   onBack: () => void;
   onEdit: (entry: WorkEntry) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   onExport: (entries: WorkEntry[], weekStart: Date) => void;
 }
 
@@ -66,10 +66,14 @@ export function WeeklyReport({ entries, onBack, onEdit, onDelete, onExport }: We
               </button>
               <button 
                 type="button"
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation();
-                  onDelete(entryToDelete);
-                  setEntryToDelete(null);
+                  try {
+                    await onDelete(entryToDelete);
+                    setEntryToDelete(null);
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : 'Delete failed. Please retry.');
+                  }
                 }}
                 className="flex-1 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700"
               >
