@@ -33,12 +33,12 @@ service cloud.firestore {
       return isActive() && (
         getUserData().role == 'ADMIN' ||
         (
-          getUserData().permissions != null &&
-          getUserData().permissions.get(module, {}).get('access', false) == true &&
-          getUserData().permissions.get(module, {}).get(action, false) == true
+          getUserData().get('permissions', null) != null &&
+          getUserData().get('permissions', {}).get(module, {}).get('access', false) == true &&
+          getUserData().get('permissions', {}).get(module, {}).get(action, false) == true
         ) ||
         (
-          getUserData().permissions == null && (
+          getUserData().get('permissions', null) == null && (
             (getUserData().role == 'STORE' && (
               (module == 'inventory' && action in ['view', 'add', 'edit']) ||
               (module == 'partsIssue' && action in ['view', 'issuePart']) ||
