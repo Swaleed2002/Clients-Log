@@ -11,7 +11,7 @@ async function verifyAdmin(auth: any) {
   }
 
   const userDoc = await db.collection("users").doc(auth.uid).get();
-  if (!userDoc.exists || userDoc.data()?.role !== "ADMIN") {
+  if (!userDoc.exists || userDoc.data()?.role !== "ADMIN" || userDoc.data()?.status === "Disabled") {
     throw new HttpsError("permission-denied", "User does not have admin privileges.");
   }
 }
@@ -94,6 +94,10 @@ export const verifySession = onCall(async (request) => {
       throw new HttpsError("permission-denied", "Token user mismatch.");
     }
 
+    const profile = await db.collection('users').doc(decoded.uid).get();
+    if (!profile.exists || profile.data()?.status === 'Disabled') {
+      throw new HttpsError('permission-denied', 'Account is disabled or missing.');
+    }
     return { valid: true };
   } catch (error: any) {
     console.error("Session verification failed:", error);
