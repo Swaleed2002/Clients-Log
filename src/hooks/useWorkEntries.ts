@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { WorkEntry } from '../types';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, deleteDoc, doc, writeBatch, setDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, writeBatch, setDoc } from 'firebase/firestore';
 import { offlineDb } from '../db/indexedDb';
 
 export function useWorkEntries(userId?: string) {
@@ -77,8 +77,13 @@ export function useWorkEntries(userId?: string) {
         partsUsed: entry.partsUsed || [], workOrderImage: entry.workOrderImage || '',
         createdAt: entry.createdAt, updatedAt: entry.updatedAt
       });
+    } else {
+      batch.delete(doc(db, 'serviceReports', 'entry_' + entry.id));
     }
     await batch.commit();
+    if (!entry.machineId) {
+      await offlineDb.serviceReports.delete('entry_' + entry.id);
+    }
   };
 
   const addEntry = async (entry: Omit<WorkEntry, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
@@ -98,6 +103,7 @@ export function useWorkEntries(userId?: string) {
       await persistEntry(newEntry);
     } catch (err) {
       setEntries(prev => prev.filter(e => e.id !== newEntry.id));
+      await offlineDb.workEntries.delete(newEntry.id).catch(console.error);
       throw err;
     }
     return newEntry;
@@ -121,18 +127,33 @@ export function useWorkEntries(userId?: string) {
       await persistEntry(mergedEntry);
     } catch (err) {
       setEntries(prev => prev.map(e => e.id === id ? existing : e));
+      await offlineDb.workEntries.put(existing).catch(console.error);
       throw err;
     }
   };
 
   const deleteEntry = async (id: string) => {
     if (!userId) return;
+    const previous = entries.find(e => e.id === id);
     setEntries(prev => prev.filter(e => e.id !== id));
-    await offlineDb.workEntries.delete(id).catch(err => console.warn('IndexedDB delete error:', err));
     try {
-      await deleteDoc(doc(db, 'entries', id));
+      // Keep a work entry and its automatically derived service report in sync.
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'entries', id));
+      batch.delete(doc(db, 'serviceReports', 'entry_' + id));
+      await batch.commit();
+      await Promise.all([
+        offlineDb.workEntries.delete(id),
+        offlineDb.serviceReports.delete('entry_' + id)
+      ]);
     } catch (err) {
-      console.error("Failed to delete entry", err);
+      if (previous) {
+        setEntries(prev => [...prev.filter(e => e.id !== id), previous]
+          .sort((a, b) => b.createdAt - a.createdAt));
+        await offlineDb.workEntries.put(previous).catch(console.error);
+      }
+      console.error('Failed to delete work entry', err);
+      throw err;
     }
   };
 
