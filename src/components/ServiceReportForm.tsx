@@ -13,8 +13,8 @@ import {
   LinxModel
 } from '../types';
 import { SignaturePad } from './SignaturePad';
-import { db } from '../firebase';
-import { collection, addDoc, updateDoc, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 import { offlineDb } from '../db/indexedDb';
 import { 
   ChevronLeft, 
@@ -122,27 +122,8 @@ export function ServiceReportForm({
     }
   }, [preselectedBagItem]);
 
-  // Auto-generate report number if new
-  useEffect(() => {
-    if (!initialData) {
-      const generateReportNo = async () => {
-        try {
-          const ref = doc(db, 'config', 'reportSequence');
-          const snap = await getDoc(ref);
-          let currentSeq = 40000;
-          if (snap.exists()) {
-            currentSeq = snap.data().current || 40000;
-          }
-          currentSeq++;
-          setReport(prev => ({ ...prev, reportNo: currentSeq.toString() }));
-        } catch (e) {
-          const fallbackNo = Math.floor(40000 + Math.random() * 9000).toString();
-          setReport(prev => ({ ...prev, reportNo: fallbackNo }));
-        }
-      };
-      generateReportNo();
-    }
-  }, [initialData]);
+  // The authoritative number is reserved atomically by saveServiceReport,
+  // never by reading a shared sequence directly from a client.
 
   const handleChange = (field: keyof ServiceReport, value: any) => {
     setReport(prev => ({ ...prev, [field]: value }));
@@ -195,113 +176,39 @@ export function ServiceReportForm({
     handleChange('partsReplaced', textLines);
   };
 
-  // Save Service Report & Update Inventory / Transactions
+  // The backend commits the report, the ledger, bag consumption and the
+  // official report number in one authoritative Firestore transaction.
   const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
     try {
-      const dataToSave: ServiceReport = {
-        ...(report as any),
+      if (!String(report.customer || '').trim() || !String(report.date || '').trim()) {
+        throw new Error('Customer and report date are required.');
+      }
+      const save = httpsCallable(functions, 'saveServiceReport');
+      const response = await save({
+        report: { ...report, partsUsed: partsUsedList },
+        reportId: initialData?.id || null
+      });
+      const result = response.data as { id: string; reportNo: string };
+      const saved: ServiceReport = {
+        ...(report as ServiceReport),
+        id: result.id,
+        reportNo: result.reportNo,
         partsUsed: partsUsedList,
-        userId: initialData?.userId || currentUser.userId,
-        updatedAt: Date.now(),
+        userId: initialData?.userId || currentUser.uid || currentUser.userId,
         createdAt: initialData?.createdAt || Date.now(),
+        updatedAt: Date.now(),
         syncStatus: 'synced'
       };
-
-      let reportDocId = initialData?.id;
-      if (reportDocId) {
-        await updateDoc(doc(db, 'serviceReports', reportDocId), dataToSave as any);
-      } else {
-        const newDocRef = await addDoc(collection(db, 'serviceReports'), dataToSave as any);
-        reportDocId = newDocRef.id;
-
-        // update sequence
-        try {
-          const seqRef = doc(db, 'config', 'reportSequence');
-          await setDoc(seqRef, { current: parseInt(report.reportNo || '40000') }, { merge: true });
-        } catch (e) {}
-      }
-
-      // Save locally to IndexedDB
-      await offlineDb.serviceReports.put({ id: reportDocId, ...dataToSave });
-
-      // Automatically register machine if serial provided
-      if (report.printerSerial && report.customer) {
-        const machineId = `${report.customer.trim().toLowerCase()}_${report.printerSerial.trim()}`.replace(/[^a-z0-9_]/g, '_');
-        const machineData = {
-          id: machineId,
-          customerId: report.customer.trim().toLowerCase().replace(/[^a-z0-9]/g, '_'),
-          customerName: report.customer.trim(),
-          brand: helperBrand,
-          model: report.modelNumber || '8920',
-          serialNumber: report.printerSerial.trim().toUpperCase(),
-          printHeadSerial: report.printHeadSerial ? report.printHeadSerial.trim() : undefined,
-          ink: report.inkBatch ? report.inkBatch.trim() : undefined,
-          updatedAt: Date.now(),
-          createdAt: Date.now()
-        };
-        await setDoc(doc(db, 'customerMachines', machineId), machineData, { merge: true });
-        await offlineDb.customerMachines.put(machineData as any);
-      }
-
-      // Process Part Transactions & Bag / Store Deductions
-      for (const part of partsUsedList) {
-        const txId = doc(collection(db, 'partTransactions')).id;
-        const txStatus = part.action === 'Installed' ? 'INSTALLED' : part.action === 'Left for Testing' ? 'TESTING' : 'BACKUP';
-
-        const tx = {
-          id: txId,
-          partId: part.partNumber,
-          partNumber: part.partNumber,
-          description: part.description,
-          brand: part.brand || helperBrand,
-          sourceType: part.source,
-          sourceDetails: part.sourceDetails || `Source: ${part.source}`,
-          destinationType: 'CUSTOMER MACHINE',
-          destinationDetails: `${report.customer} - ${report.printerSerial || report.modelNumber}`,
-          engineerId: currentUser.userId,
-          engineerName: currentUser.fullName,
-          customerId: report.customer,
-          customerName: report.customer,
-          machineModel: report.modelNumber,
-          machineSerial: report.printerSerial,
-          serviceReportId: reportDocId,
-          serviceReportNo: report.reportNo,
-          quantity: part.quantity,
-          condition: part.condition,
-          purpose: part.action === 'Left for Testing' ? 'Testing' : part.action === 'Left as Backup' ? 'Backup' : 'Customer Replacement',
-          status: txStatus,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          createdBy: currentUser.fullName
-        };
-
-        await setDoc(doc(db, 'partTransactions', txId), tx);
-        await offlineDb.partTransactions.put(tx as any);
-
-        // If taken from Engineer's Bag, deduct from Bag Stock
-        if (part.source === 'MY BAG') {
-          const bagDocId = `${currentUser.userId}_${part.partNumber}_${part.condition}`.replace(/[^a-zA-Z0-9_]/g, '_');
-          const bagSnap = await offlineDb.engineerBags.get(bagDocId);
-          if (bagSnap) {
-            const newQty = Math.max(0, bagSnap.quantity - part.quantity);
-            if (newQty === 0) {
-              await deleteDoc(doc(db, 'engineerBags', bagDocId)).catch(() => {});
-              await offlineDb.engineerBags.delete(bagDocId).catch(() => {});
-            } else {
-              const updatedBag = { ...bagSnap, quantity: newQty, updatedAt: Date.now() };
-              await setDoc(doc(db, 'engineerBags', bagDocId), updatedBag);
-              await offlineDb.engineerBags.put(updatedBag);
-            }
-          }
-        }
-      }
-
-      setSaving(false);
+      await offlineDb.serviceReports.put(saved).catch(error =>
+        console.warn('Report saved to cloud but could not update local cache', error)
+      );
       onSaved();
-    } catch (err: any) {
-      console.error('Failed to save service report:', err);
-      alert(`Failed to save report: ${err.message}`);
+    } catch (error: any) {
+      console.error('Service report save failed', error);
+      alert(`Failed to save service report: ${error?.message || 'Please retry.'}`);
+    } finally {
       setSaving(false);
     }
   };
