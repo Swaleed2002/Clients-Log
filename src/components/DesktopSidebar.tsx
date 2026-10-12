@@ -213,6 +213,7 @@ export function DesktopSidebar({
           <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
             Reports & Admin
           </p>
+          {canAccessModule(profile, 'serviceReports') && <NavItem view="serviceReportsList" icon={FileText} label="Service Reports" />}
           {canAccessModule(profile, 'reports') && <NavItem view="report" icon={FileSpreadsheet} label="Weekly Report" />}
           {canAccessModule(profile, 'users') && (
             <NavItem 
