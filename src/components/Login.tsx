@@ -52,13 +52,15 @@ export function Login({ onSuccess }: LoginProps) {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">User ID</label>
+            <label htmlFor="engineer-user-id" className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">User ID</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <UserIcon className="h-5 w-5 text-gray-400" />
               </div>
               <input
                 type="text"
+                id="engineer-user-id"
+                autoComplete="username"
                 value={userId}
                 onChange={e => setUserId(e.target.value)}
                 className="block w-full pl-10 pr-3 py-4 text-base border-2 border-gray-200 rounded-xl focus:ring-0 focus:border-[#E61C24] transition-colors"
@@ -69,13 +71,15 @@ export function Login({ onSuccess }: LoginProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">Password</label>
+            <label htmlFor="engineer-password" className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">Password</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <KeyRound className="h-5 w-5 text-gray-400" />
               </div>
               <input
                 type="password"
+                id="engineer-password"
+                autoComplete="current-password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="block w-full pl-10 pr-3 py-4 text-base border-2 border-gray-200 rounded-xl focus:ring-0 focus:border-[#E61C24] transition-colors"
