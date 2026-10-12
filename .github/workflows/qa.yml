@@ -43,6 +43,9 @@ jobs:
       - name: Build production frontend
         run: bun run build
 
+      - name: Verify no unsafe admin bootstrap endpoints
+        run: node --test tests/server-safety.test.mjs
+
       - name: Install and compile Firebase Functions
         run: |
           cd functions
