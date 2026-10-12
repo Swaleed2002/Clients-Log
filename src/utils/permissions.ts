@@ -39,7 +39,7 @@ export const getRoleDefaults = (role: string): UserPermissions => {
     return {
       ...defaultPermissions,
       serviceReports: { ...defaultPermissions.serviceReports, add: true, edit: true },
-      workEntries: { ...defaultPermissions.workEntries, add: true, edit: true },
+      workEntries: { ...defaultPermissions.workEntries, add: true, edit: true, delete: true },
       workshop: { ...defaultPermissions.workshop, createIn: true, addActivity: true, markReady: true, prepareOut: true }
     };
   }
