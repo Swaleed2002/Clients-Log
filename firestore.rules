@@ -92,15 +92,17 @@ service cloud.firestore {
     
     match /config/{document=**} {
       allow read: if isActive();
-      // Replace client-side report numbers with an atomic allocator before full rollout.
-      allow write: if isAdmin() ||
-        (document == 'reportSequence' && hasPerm('serviceReports', 'add'));
+      // Sequence changes are authoritative backend operations (Admin SDK).
+      allow write: if isAdmin();
     }
     
     match /serviceReports/{reportId} {
       allow get, list: if isActive();
-      allow create: if hasPerm('serviceReports', 'add');
-      allow update: if hasPerm('serviceReports', 'edit');
+      allow create: if hasPerm('serviceReports', 'add') &&
+        request.resource.data.userId in [request.auth.uid, getUserData().userId];
+      allow update: if hasPerm('serviceReports', 'edit') &&
+        (isAdmin() || resource.data.userId in [request.auth.uid, getUserData().userId]) &&
+        request.resource.data.userId == resource.data.userId;
       // Permit deletion of ONLY an engineer's entry-derived report, never a
       // standalone service report or another engineer's linked record.
       allow delete: if hasPerm('serviceReports', 'delete') || (
@@ -117,8 +119,10 @@ service cloud.firestore {
     
     match /inventory/{itemId} {
       allow get, list: if isActive();
-      allow create: if hasPerm('inventory', 'add');
-      allow update: if hasPerm('inventory', 'edit');
+      allow create: if hasPerm('inventory', 'add') &&
+        request.resource.data.quantity is int && request.resource.data.quantity >= 0;
+      allow update: if hasPerm('inventory', 'edit') &&
+        request.resource.data.quantity is int && request.resource.data.quantity >= 0;
       allow delete: if hasPerm('inventory', 'delete');
     }
     
