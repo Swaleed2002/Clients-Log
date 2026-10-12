@@ -359,7 +359,7 @@ export function Dashboard({
                 Open Service Reports <ChevronRight className="w-4 h-4 ml-1" />
               </div>
             </button>
-          )
+          )}
 
 
           {canAccessModule(profile, 'inventory') && (
