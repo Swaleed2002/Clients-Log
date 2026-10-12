@@ -7,12 +7,13 @@ import { offlineDb } from '../db/indexedDb';
 
 interface ServiceReportsListProps {
   currentUser: UserProfile;
+  canCreate: boolean;
   onNew: () => void;
   onEdit: (report: ServiceReport) => void;
   onBack: () => void;
 }
 
-export function ServiceReportsList({ currentUser, onNew, onEdit, onBack }: ServiceReportsListProps) {
+export function ServiceReportsList({ currentUser, canCreate, onNew, onEdit, onBack }: ServiceReportsListProps) {
   const [reports, setReports] = useState<ServiceReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,12 +72,12 @@ export function ServiceReportsList({ currentUser, onNew, onEdit, onBack }: Servi
             <p className="text-xs text-gray-500 font-medium">Original Work Order forms with full parts & signature tracking</p>
           </div>
         </div>
-        <button 
+        {canCreate && <button 
           onClick={onNew}
           className="flex items-center justify-center px-4 py-2.5 bg-[#E61C24] text-white rounded-xl font-bold shadow-md shadow-red-500/20 hover:bg-red-700 transition-colors text-xs self-start sm:self-auto"
         >
           <Plus className="w-4 h-4 mr-1.5" /> CREATE WORK ORDER
-        </button>
+        </button>}
       </div>
 
       {/* Search Filter */}
