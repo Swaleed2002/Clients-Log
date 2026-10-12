@@ -131,8 +131,26 @@ service cloud.firestore {
     
     match /partTransactions/{transactionId} {
       allow get, list: if isActive();
-      allow create: if hasPerm('partsIssue', 'issuePart');
-      allow update: if hasPerm('partsIssue', 'cancelIssue');
+      allow create: if hasPerm('partsIssue', 'issuePart') || (
+        // Engineers can request a bag return; only Store/Admin receives it.
+        hasPerm('engineerBag', 'view') &&
+        request.resource.data.engineerId == getUserData().userId &&
+        request.resource.data.sourceType == 'MY BAG' &&
+        request.resource.data.destinationType == 'STORE' &&
+        request.resource.data.status == 'WITH ENGINEER' &&
+        request.resource.data.quantity is int &&
+        request.resource.data.quantity > 0 &&
+        request.resource.data.returnInitiatedAt is int
+      );
+      allow update: if hasPerm('partsIssue', 'cancelIssue') || (
+        hasPerm('partsIssue', 'issuePart') &&
+        resource.data.sourceType == 'MY BAG' &&
+        resource.data.destinationType == 'STORE' &&
+        resource.data.status == 'WITH ENGINEER' &&
+        request.resource.data.status == 'RETURNED' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'storeReceivedAt', 'storeReceivedBy', 'updatedAt'])
+      );
       allow delete: if isAdmin();
     }
     
