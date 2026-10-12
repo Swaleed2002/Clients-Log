@@ -25,27 +25,6 @@ export function Login({ onSuccess }: LoginProps) {
       await login(normalizedUserId, password.trim());
       onSuccess();
     } catch (err: any) {
-      if ((err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-login-credentials') && normalizedUserId === 'ADMIN' && password.trim() === 'Admin001') {
-        try {
-          setError('Initializing Admin account securely... Please wait.');
-          const res = await fetch('/api/admin/bootstrap', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: normalizedUserId, password: password.trim() })
-          });
-          if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(errText);
-          }
-          await login(normalizedUserId, password.trim());
-          onSuccess();
-          return;
-        } catch (bootstrapErr: any) {
-          setError(`Bootstrap failed: ${bootstrapErr.message}`);
-          setLoading(false);
-          return;
-        }
-      }
       if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-login-credentials') {
         setError(`Invalid User ID or password.`);
       } else {
