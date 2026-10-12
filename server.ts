@@ -49,12 +49,12 @@ async function startServer() {
     }
 
     try {
-      const decodedToken = await auth.verifyIdToken(idToken);
+      const decodedToken = await auth.verifyIdToken(idToken, true);
       const uid = decodedToken.uid;
       
       // Verify admin role from Firestore
       const userDoc = await dbAdmin.collection('users').doc(uid).get();
-      if (!userDoc.exists || userDoc.data()?.role !== 'ADMIN') {
+      if (!userDoc.exists || userDoc.data()?.role !== 'ADMIN' || userDoc.data()?.status === 'Disabled') {
         return res.status(403).json({ error: 'Forbidden: Admin role required' });
       }
       
@@ -83,7 +83,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/admin/users/:userId/password", async (req, res) => {
+  app.put("/api/admin/users/:userId/password", verifyAdminToken, async (req, res) => {
     try {
       if (!auth) throw new Error("Firebase Admin not configured (ADC missing). Deployment is required for true admin capabilities.");
       const { userId } = req.params;
@@ -98,7 +98,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/users/:uid", async (req, res) => {
+  app.delete("/api/admin/users/:uid", verifyAdminToken, async (req, res) => {
     try {
       if (!auth) throw new Error("Firebase Admin not configured (ADC missing). Deployment is required for true admin capabilities.");
       const { uid } = req.params;
@@ -106,59 +106,6 @@ async function startServer() {
       res.status(200).json({ success: true });
     } catch (error: any) {
       console.error('Error deleting user:', error);
-      res.status(500).send(error.message);
-    }
-  });
-
-  app.post("/api/admin/bootstrap", async (req, res) => {
-    try {
-      const { userId, password } = req.body;
-      if (userId !== 'ADMIN' || password !== 'Admin001') {
-        return res.status(403).json({ error: "Invalid bootstrap credentials" });
-      }
-
-      const email = `ADMIN@fieldengineer.local`;
-      let uid = '';
-      
-      try {
-        if (auth) {
-          // If we have Admin API working
-          let userRecord;
-          try {
-            userRecord = await auth.getUserByEmail(email);
-          } catch (e: any) {
-            if (e.code === 'auth/user-not-found') {
-              userRecord = await auth.createUser({
-                uid: 'ADMIN',
-                email: email,
-                password: password,
-                displayName: 'Administrator',
-              });
-            } else {
-              throw e;
-            }
-          }
-          uid = userRecord.uid;
-          
-          if (dbAdmin) {
-            await dbAdmin.collection('users').doc(uid).set({
-              userId: 'ADMIN',
-              fullName: 'Administrator',
-              role: 'ADMIN',
-              status: 'Active'
-            }, { merge: true });
-          }
-        }
-      } catch (adminErr: any) {
-        console.error("Firebase Admin SDK bootstrap failed, falling back to Web SDK if possible", adminErr);
-        // We will just let the client try to use the REST API directly or just return error
-        // Actually, the Web SDK requires a browser, so we can't easily do it here securely without Web API key.
-        throw adminErr;
-      }
-      
-      res.status(200).json({ success: true, uid });
-    } catch (error: any) {
-      console.error('Bootstrap error:', error);
       res.status(500).send(error.message);
     }
   });
