@@ -3,6 +3,8 @@ import { useWorkEntries } from './hooks/useWorkEntries';
 import { Dashboard } from './components/Dashboard';
 import { WorkEntryForm } from './components/WorkEntryForm';
 import { WeeklyReport } from './components/WeeklyReport';
+import { ServiceReportsList } from './components/ServiceReportsList';
+import { ServiceReportForm } from './components/ServiceReportForm';
 import { Login } from './components/Login';
 import { AdminPanel } from './components/AdminPanel';
 import { PartsCatalog } from './components/PartsCatalog';
@@ -12,8 +14,8 @@ import { TestingBackupTracker } from './components/TestingBackupTracker';
 import { ClientMachines } from './components/ClientMachines';
 import { WorkshopDashboard } from './components/workshop/WorkshopDashboard';
 import { exportToExcel } from './utils';
-import { WorkEntry, ViewState, EngineerBagItem, PartMasterItem, CustomerMachine } from './types';
-import { canAccessModule } from './utils/permissions';
+import { WorkEntry, ViewState, EngineerBagItem, PartMasterItem, CustomerMachine, ServiceReport } from './types';
+import { canAccessModule, canPerform } from './utils/permissions';
 import { 
   DatabaseBackup, 
   UploadCloud, 
@@ -53,6 +55,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [editingEntry, setEditingEntry] = useState<WorkEntry | undefined>(undefined);
   const [entryMachine, setEntryMachine] = useState<CustomerMachine | undefined>();
+  const [editingServiceReport, setEditingServiceReport] = useState<ServiceReport | undefined>();
   const [preselectedBagItem, setPreselectedBagItem] = useState<EngineerBagItem | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   
@@ -89,15 +92,19 @@ export default function App() {
       case 'form':
         allowed = canAccessModule(profile, 'workEntries');
         break;
-      case 'serviceReportForm':
+      case 'serviceReportsList':
         allowed = canAccessModule(profile, 'serviceReports');
+        break;
+      case 'serviceReportForm':
+        allowed = canPerform(profile, 'serviceReports',
+          editingServiceReport ? 'edit' : 'add') || (Boolean(editingServiceReport) && canPerform(profile, 'serviceReports', 'view'));
         break;
     }
     
     if (!allowed) {
       setCurrentView('dashboard');
     }
-  }, [currentView, profile]);
+  }, [currentView, profile, editingServiceReport]);
 
   useEffect(() => {
     if (user && currentView === 'login') {
@@ -221,7 +228,7 @@ export default function App() {
             onAddEntry={handleAddEntry}
             onViewReport={() => setCurrentView('report')}
             onExport={() => handleExport(entries, new Date())}
-            onOpenServiceReports={handleAddEntry}
+            onOpenServiceReports={() => setCurrentView('serviceReportsList')}
             onOpenPartsCatalog={() => setCurrentView('partsCatalog')}
             onOpenStoreInventory={() => setCurrentView('storeInventory')}
             onOpenEngineerBag={() => setCurrentView('engineerParts')}
@@ -232,6 +239,26 @@ export default function App() {
           />
         )}
         
+        {currentView === 'serviceReportsList' && canAccessModule(profile, 'serviceReports') && (
+          <ServiceReportsList
+            currentUser={profile}
+            canCreate={canPerform(profile, 'serviceReports', 'add')}
+            onNew={() => { setEditingServiceReport(undefined); setCurrentView('serviceReportForm'); }}
+            onEdit={(report) => { setEditingServiceReport(report); setCurrentView('serviceReportForm'); }}
+            onBack={() => setCurrentView('dashboard')}
+          />
+        )}
+
+        {currentView === 'serviceReportForm' && canAccessModule(profile, 'serviceReports') && (
+          <ServiceReportForm
+            initialData={editingServiceReport}
+            currentUser={profile}
+            readOnly={!canPerform(profile, 'serviceReports', editingServiceReport ? 'edit' : 'add')}
+            onBack={() => setCurrentView('serviceReportsList')}
+            onSaved={() => { setEditingServiceReport(undefined); setCurrentView('serviceReportsList'); }}
+          />
+        )}
+
         {currentView === 'form' && canAccessModule(profile, 'workEntries') && (
           <WorkEntryForm 
             technicianName={profile.fullName}
@@ -472,6 +499,14 @@ export default function App() {
                 className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
               >
                 <Printer className="w-4 h-4 mr-2.5 text-emerald-600" /> Equipment Registry & History
+              </button>
+              )}
+              {canAccessModule(profile, 'serviceReports') && (
+              <button
+                onClick={() => { setShowSettings(false); setCurrentView('serviceReportsList'); }}
+                className="w-full flex items-center p-2.5 font-bold text-gray-700 hover:bg-gray-100 rounded-xl"
+              >
+                <FileText className="w-4 h-4 mr-2.5 text-indigo-600" /> Service Reports & Work Orders
               </button>
               )}
               {canAccessModule(profile, 'reports') && (

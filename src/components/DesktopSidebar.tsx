@@ -103,7 +103,7 @@ export function DesktopSidebar({
     const isActive = currentView === view;
     return (
       <button
-        onClick={() => setCurrentView(view)}
+        onClick={() => view === 'form' ? onAddEntry() : setCurrentView(view)}
         className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all text-left group ${
           isActive
             ? 'bg-[#E61C24] text-white shadow-md shadow-red-900/20'
@@ -196,7 +196,7 @@ export function DesktopSidebar({
             Parts & Warehousing
           </p>
           {canAccessModule(profile, 'inventory') && <NavItem view="partsCatalog" icon={Package} label="Parts Master Catalog" />}
-          <NavItem view="engineerParts" icon={Briefcase} label="My Bag Stock" />
+          {canAccessModule(profile, 'engineerBag') && <NavItem view="engineerParts" icon={Briefcase} label="My Bag Stock" />}
           {canAccessModule(profile, 'inventory') && (
             <NavItem 
                view="storeInventory" 
@@ -213,6 +213,7 @@ export function DesktopSidebar({
           <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
             Reports & Admin
           </p>
+          {canAccessModule(profile, 'serviceReports') && <NavItem view="serviceReportsList" icon={FileText} label="Service Reports" />}
           {canAccessModule(profile, 'reports') && <NavItem view="report" icon={FileSpreadsheet} label="Weekly Report" />}
           {canAccessModule(profile, 'users') && (
             <NavItem 

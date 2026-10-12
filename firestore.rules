@@ -15,8 +15,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
+    function isActive() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData().status != 'Disabled';
+    }
+
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'ADMIN';
+      return isActive() && getUserData().role == 'ADMIN';
     }
     
     function isOwner(userId) {
@@ -24,15 +30,15 @@ service cloud.firestore {
     }
     
     function hasPerm(module, action) {
-      return isSignedIn() && (
+      return isActive() && (
         getUserData().role == 'ADMIN' ||
         (
-          getUserData().permissions != null &&
-          getUserData().permissions.get(module, {}).get('access', false) == true &&
-          getUserData().permissions.get(module, {}).get(action, false) == true
+          getUserData().get('permissions', null) != null &&
+          getUserData().get('permissions', {}).get(module, {}).get('access', false) == true &&
+          getUserData().get('permissions', {}).get(module, {}).get(action, false) == true
         ) ||
         (
-          getUserData().permissions == null && (
+          getUserData().get('permissions', null) == null && (
             (getUserData().role == 'STORE' && (
               (module == 'inventory' && action in ['view', 'add', 'edit']) ||
               (module == 'partsIssue' && action in ['view', 'issuePart']) ||
@@ -41,7 +47,7 @@ service cloud.firestore {
             )) ||
             (getUserData().role == 'ENGINEER' && (
               (module == 'serviceReports' && action in ['view', 'add', 'edit']) ||
-              (module == 'workEntries' && action in ['view', 'add', 'edit']) ||
+              (module == 'workEntries' && action in ['view', 'add', 'edit', 'delete']) ||
               (module == 'workshop' && action in ['view', 'createIn', 'addActivity', 'markReady', 'prepareOut']) ||
               (module == 'engineerBag' && action == 'view') ||
               (module in ['clients', 'machines', 'inventory'] && action == 'view')
@@ -53,67 +59,121 @@ service cloud.firestore {
     
     // Users Collection
     match /users/{userId} {
-      allow read: if isSignedIn(); 
+      // A disabled user can read their own record to discover account revocation.
+      allow read: if isSignedIn() && (isOwner(userId) || isActive());
       allow create: if isAdmin();
-      allow update: if isOwner(userId) || isAdmin() || hasPerm('users', 'manageRights') || hasPerm('users', 'edit');
-      allow delete: if isAdmin() || hasPerm('users', 'deleteUser');
+      // Only an active administrator may change identity, role, status or rights.
+      // Delegated rights managers may modify non-admin user permissions only.
+      allow update: if isAdmin() || (
+        hasPerm('users', 'manageRights') &&
+        !isOwner(userId) &&
+        resource.data.role != 'ADMIN' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['permissions'])
+      );
+      allow delete: if isAdmin();
     }
     
     match /entries/{entryId} {
-      allow get, list: if isSignedIn();
-      allow create: if hasPerm('workEntries', 'add');
-      allow update: if hasPerm('workEntries', 'edit');
-      allow delete: if hasPerm('workEntries', 'delete');
+      allow get, list: if isActive() && (
+        isAdmin() || hasPerm('reports', 'export') ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.userId == getUserData().userId
+      );
+      allow create: if hasPerm('workEntries', 'add') &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if hasPerm('workEntries', 'edit') &&
+        (isAdmin() || resource.data.userId == request.auth.uid ||
+          resource.data.userId == getUserData().userId) &&
+        request.resource.data.userId == resource.data.userId;
+      allow delete: if hasPerm('workEntries', 'delete') &&
+        (isAdmin() || resource.data.userId == request.auth.uid ||
+          resource.data.userId == getUserData().userId);
     }
     
     match /config/{document=**} {
-      allow read, write: if isSignedIn();
+      allow read: if isActive();
+      // Sequence changes are authoritative backend operations (Admin SDK).
+      allow write: if isAdmin();
     }
     
     match /serviceReports/{reportId} {
-      allow get, list: if isSignedIn();
-      allow create: if hasPerm('serviceReports', 'add');
-      allow update: if hasPerm('serviceReports', 'edit');
-      allow delete: if hasPerm('serviceReports', 'delete');
+      allow get, list: if isActive();
+      allow create: if hasPerm('serviceReports', 'add') &&
+        request.resource.data.userId in [request.auth.uid, getUserData().userId];
+      allow update: if hasPerm('serviceReports', 'edit') &&
+        (isAdmin() || resource.data.userId in [request.auth.uid, getUserData().userId]) &&
+        request.resource.data.userId == resource.data.userId;
+      // Permit deletion of ONLY an engineer's entry-derived report, never a
+      // standalone service report or another engineer's linked record.
+      allow delete: if hasPerm('serviceReports', 'delete') || (
+        hasPerm('workEntries', 'delete') &&
+        reportId.matches('entry_.*') &&
+        (
+          resource == null || (
+            resource.data.userId in [request.auth.uid, getUserData().userId] &&
+            reportId == 'entry_' + resource.data.linkedEntryId
+          )
+        )
+      );
     }
     
     match /inventory/{itemId} {
-      allow get, list: if isSignedIn();
-      allow create: if hasPerm('inventory', 'add');
-      allow update: if hasPerm('inventory', 'edit');
+      allow get, list: if isActive();
+      allow create: if hasPerm('inventory', 'add') &&
+        request.resource.data.quantity is int && request.resource.data.quantity >= 0;
+      allow update: if hasPerm('inventory', 'edit') &&
+        request.resource.data.quantity is int && request.resource.data.quantity >= 0;
       allow delete: if hasPerm('inventory', 'delete');
     }
     
     match /engineerBags/{bagItemId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isActive();
       allow create: if hasPerm('engineerBag', 'add') || hasPerm('partsIssue', 'issuePart');
       allow update: if hasPerm('engineerBag', 'edit') || hasPerm('partsIssue', 'issuePart');
       allow delete: if hasPerm('engineerBag', 'delete') || hasPerm('partsIssue', 'cancelIssue');
     }
     
     match /partTransactions/{transactionId} {
-      allow get, list: if isSignedIn();
-      allow create: if hasPerm('partsIssue', 'issuePart');
-      allow update: if hasPerm('partsIssue', 'cancelIssue');
+      allow get, list: if isActive();
+      allow create: if hasPerm('partsIssue', 'issuePart') || (
+        // Engineers can request a bag return; only Store/Admin receives it.
+        hasPerm('engineerBag', 'view') &&
+        request.resource.data.engineerId == getUserData().userId &&
+        request.resource.data.sourceType == 'MY BAG' &&
+        request.resource.data.destinationType == 'STORE' &&
+        request.resource.data.status == 'WITH ENGINEER' &&
+        request.resource.data.quantity is int &&
+        request.resource.data.quantity > 0 &&
+        request.resource.data.returnInitiatedAt is int
+      );
+      allow update: if hasPerm('partsIssue', 'cancelIssue') || (
+        hasPerm('partsIssue', 'issuePart') &&
+        resource.data.sourceType == 'MY BAG' &&
+        resource.data.destinationType == 'STORE' &&
+        resource.data.status == 'WITH ENGINEER' &&
+        request.resource.data.status == 'RETURNED' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'storeReceivedAt', 'storeReceivedBy', 'updatedAt'])
+      );
       allow delete: if isAdmin();
     }
     
     match /clients/{clientId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isActive();
       allow create: if hasPerm('clients', 'add');
       allow update: if hasPerm('clients', 'edit');
       allow delete: if hasPerm('clients', 'delete');
     }
     
     match /customerMachines/{machineId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isActive();
       allow create: if hasPerm('machines', 'add');
       allow update: if hasPerm('machines', 'edit');
       allow delete: if hasPerm('machines', 'delete');
     }
     
     match /workshopCases/{caseId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isActive();
       allow create: if hasPerm('workshop', 'createIn');
       allow update: if hasPerm('workshop', 'addActivity') || hasPerm('workshop', 'markReady') || hasPerm('workshop', 'prepareOut') || hasPerm('workshop', 'approveIn') || hasPerm('workshop', 'approveOut') || isAdmin();
       allow delete: if isAdmin();

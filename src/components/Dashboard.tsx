@@ -341,6 +341,25 @@ export function Dashboard({
 )}
 
           {/* Service Reports / Work Orders */}
+          {canAccessModule(profile, 'serviceReports') && (
+            <button
+              onClick={onOpenServiceReports}
+              className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm hover:border-indigo-600 hover:shadow-md transition-all text-left group flex flex-col justify-between"
+            >
+              <div>
+                <FileText className="w-8 h-8 text-indigo-600 mb-3" />
+                <p className="text-sm font-black text-gray-900 uppercase tracking-wide">
+                  Service Reports & Work Orders
+                </p>
+                <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                  A4 job reports, signed work orders and linked parts usage.
+                </p>
+              </div>
+              <div className="flex items-center text-indigo-600 font-bold text-xs mt-4">
+                Open Service Reports <ChevronRight className="w-4 h-4 ml-1" />
+              </div>
+            </button>
+          )}
 
 
           {canAccessModule(profile, 'inventory') && (

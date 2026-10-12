@@ -6,7 +6,7 @@ import {
   onAuthStateChanged, 
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { UserProfile } from '../types';
 
@@ -18,42 +18,38 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeProfile: (() => void) | undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      unsubscribeProfile?.();
+      unsubscribeProfile = undefined;
       setUser(firebaseUser);
-      if (firebaseUser) {
-        try {
-          // Fetch user profile from Firestore
-          const userId = firebaseUser.email?.replace(DOMAIN_SUFFIX, '') || firebaseUser.uid;
-          let userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          
-          if (!userDoc.exists() && userId.toUpperCase() === 'ADMIN') {
-            // Auto-heal admin profile if it got out of sync
-            const { setDoc } = await import('firebase/firestore');
-            await setDoc(doc(db, 'users', firebaseUser.uid), {
-              userId: 'ADMIN',
-              fullName: 'Administrator',
-              role: 'ADMIN',
-              status: 'Active'
-            });
-            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          }
-
-          if (userDoc.exists()) {
-            setProfile({ ...userDoc.data(), uid: firebaseUser.uid } as UserProfile);
-          } else {
-            setProfile(null);
-          }
-        } catch (error) {
-          console.error("Failed to fetch user profile", error);
-          setProfile(null);
-        }
-      } else {
-        setProfile(null);
+      setProfile(null);
+      if (!firebaseUser) {
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      setLoading(true);
+      unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), (snapshot) => {
+        if (!snapshot.exists() || snapshot.data().status === 'Disabled') {
+          setProfile(null);
+          setLoading(false);
+          void signOut(auth).catch(error => console.error('Failed to sign out revoked user', error));
+          return;
+        }
+        setProfile({ ...snapshot.data(), uid: firebaseUser.uid } as UserProfile);
+        setLoading(false);
+      }, (error) => {
+        console.error('User profile subscription failed', error);
+        setProfile(null);
+        setLoading(false);
+      });
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeProfile?.();
+      unsubscribeAuth();
+    };
   }, []);
 
   useEffect(() => {
@@ -69,9 +65,14 @@ export function useAuth() {
       try {
         const idToken = await auth.currentUser.getIdToken(false);
         await verify({ idToken });
-      } catch (error) {
-        console.warn('Session revoked - logging out');
-        await signOut(auth);
+      } catch (error: any) {
+        const code = String(error?.code || '');
+        if (code.includes('unauthenticated') || code.includes('permission-denied')) {
+          console.warn('Session revoked - logging out');
+          await signOut(auth);
+        } else {
+          console.warn('Session verification unavailable; preserving offline session', error);
+        }
       } finally {
         checking = false;
       }

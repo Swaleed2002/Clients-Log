@@ -212,7 +212,9 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
       if (selectedReportUser === 'ALL') {
         q = query(collection(db, 'entries'));
       } else {
-        q = query(collection(db, 'entries'), where('userId', '==', selectedReportUser));
+        const userRecord = users.find(u => u.userId === selectedReportUser);
+        const identifiers = [...new Set([selectedReportUser, userRecord?.uid].filter((x): x is string => !!x))];
+        q = query(collection(db, 'entries'), where('userId', 'in', identifiers));
       }
       const snapshot = await getDocs(q);
       const entries: WorkEntry[] = [];
@@ -229,7 +231,10 @@ export function AdminPanel({ onBack, currentUser }: AdminPanelProps) {
 
       // Create user map
       const userMap: Record<string, string> = {};
-      users.forEach(u => userMap[u.userId] = u.fullName);
+      users.forEach(u => {
+        userMap[u.userId] = u.fullName;
+        if (u.uid) userMap[u.uid] = u.fullName;
+      });
 
       exportToExcel(entries, new Date(), userMap, currentUser, selectedReportUser);
       setMessage({ type: 'success', text: `Exported ${entries.length} records successfully.` });
